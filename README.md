@@ -11,7 +11,8 @@ Claude Code --hooks--> led_driver.py --USB-serial--> Wemos D1 Mini --WS2812B dat
 
 - **No Wi-Fi.** The D1 Mini's wireless feature is never used — USB-serial only.
 - **Single cable.** Power and data both go through the same USB cable; no external power supply needed.
-- Brightness is capped in firmware (USB port safety); each command can additionally dim below that ceiling via a `bright_pct` parameter.
+- Brightness is capped in firmware (USB port safety); each command can additionally dim below that ceiling via a
+  `bright_pct` parameter.
 
 ## Hardware requirements
 
@@ -28,8 +29,9 @@ Claude Code --hooks--> led_driver.py --USB-serial--> Wemos D1 Mini --WS2812B dat
 ## Folders
 
 - `firmware/platformio.ini` — PlatformIO configuration (board + library versions pinned)
-- `firmware/src/main.cpp` — Firmware flashed onto the D1 Mini
-- `driver/led_driver.py` — Python script running on the host, invoked by hooks
+- `firmware/src/main.cpp` — Firmware flashed onto the D1 Mini (generic animation renderer)
+- `driver/led_driver.py` — Python driver; translates `--state` / `--raw` into wire-protocol commands
+- `driver/states/` — JSON state profiles (e.g. `claude.json`); drop in new files to add integrations
 - `driver/claude_settings_hooks_example.json` — Example Claude Code hook configuration
 
 ## Setup sequence
@@ -65,12 +67,11 @@ D1 Mini "D4"  -> Strip DIN (data)
 
 ```bash
 pip3 install pyserial
-python3 driver/led_driver.py idle   # test — LEDs should slowly breathe blue
-```
 
-For ad-hoc testing without involving the state mapping:
+# State mode — looks up claude.idle in driver/states/claude.json:
+python3 driver/led_driver.py --state claude.idle
 
-```bash
+# Raw mode — direct animation, bypasses state profiles:
 python3 driver/led_driver.py --raw breathe --rgb 0,50,220 --period 3500
 python3 driver/led_driver.py --raw solid --rgb 0,0,255 --brightness 30
 ```
@@ -80,20 +81,21 @@ python3 driver/led_driver.py --raw solid --rgb 0,0,255 --brightness 30
 Append the contents of `claude_settings_hooks_example.json` to `~/.claude/settings.json`,
 and update the paths to point to your `led_driver.py` location.
 
-## State colors
+## Claude Code states
 
-The driver maps each Claude Code state to an animation via `STATE_MAP` in
-`driver/led_driver.py`. Defaults:
+The driver ships with `driver/states/claude.json`, which maps each Claude Code
+state to an animation. Edit that file to retune any state — **no firmware
+reflash, no Python changes required**.
 
-| State      | Animation | Color (RGB)  | Period | Brightness |
-|------------|-----------|--------------|--------|------------|
-| `idle`     | breathe   | 0, 50, 220   | 3500ms | 100%       |
-| `thinking` | scanner   | 90, 0, 170   | 1600ms | 100%       |
-| `tool`     | breathe   | 255, 128, 0  | 900ms  | 100%       |
-| `waiting`  | breathe   | 200, 200, 200 | 2500ms | 60%        |
-| `success`  | fill      | 0, 220, 0    | 1600ms | 100%       |
-| `error`    | blink     | 180, 0, 0    | 300ms  | 100%       |
-| `off`      | off       | —            | —      | —          |
+| State (`--state claude.<key>`) | Animation | Color (RGB)   | Period | Brightness |
+|--------------------------------|-----------|---------------|--------|------------|
+| `idle`                         | breathe   | 0, 50, 220    | 3500ms | 100%       |
+| `thinking`                     | scanner   | 90, 0, 170    | 1600ms | 100%       |
+| `tool`                         | breathe   | 255, 128, 0   | 1500ms | 100%       |
+| `waiting`                      | breathe   | 200, 200, 200 | 2500ms | 60%        |
+| `success`                      | fill      | 0, 220, 0     | 3500ms | 100%       |
+| `error`                        | blink     | 180, 0, 0     | 300ms  | 100%       |
+| `off`                          | off       | —             | —      | —          |
 
 ## Wire protocol
 
@@ -116,19 +118,26 @@ in firmware). Unknown animations and malformed lines are silently ignored.
 
 ## Customizing the visuals
 
-Edit `STATE_MAP` in `driver/led_driver.py` to retune any state's animation,
-color, period, or brightness — **no firmware reflash required**. Each entry is
-a 4-tuple: `(animation, (r, g, b), period_ms, brightness_pct)`.
+Edit `driver/states/claude.json` to retune any Claude Code state — change its
+animation, RGB, period, or brightness. Changes take effect on the next hook
+fire; no reflash, no Python edit.
 
-```python
-# Dim the error blink to 70% and slow it down:
-"error": ("blink", (180, 0, 0), 500, 70),
-
-# Make idle a calm green instead of blue:
-"idle": ("breathe", (0, 180, 80), 4000, 80),
+```json
+"error": {"animation": "blink", "rgb": [180, 0, 0], "period": 500, "brightness": 70}
 ```
 
-For one-off testing from the shell, bypass `STATE_MAP` with `--raw`:
+### Adding new state profiles
+
+State profiles are just JSON files in `driver/states/`. Drop in a new file
+(e.g. `git.json`) and reference it with `--state git.<key>`. Each entry needs
+`animation` plus `rgb` / `period` / `brightness` (except `off`, which needs
+only `animation`). No Python changes required.
+
+```bash
+python3 driver/led_driver.py --state git.merging --quiet
+```
+
+For one-off testing from the shell without writing a profile, use `--raw`:
 
 ```bash
 python3 driver/led_driver.py --raw scanner --rgb 200,0,255 --period 1200 --brightness 50
@@ -136,16 +145,16 @@ python3 driver/led_driver.py --raw scanner --rgb 200,0,255 --period 1200 --brigh
 
 ## Claude Code hooks → state mapping
 
-| Hook (Claude Code event) | Command    | When it fires                            |
-|--------------------------|------------|------------------------------------------|
-| `SessionStart`           | `idle`     | When Claude Code opens                   |
-| `UserPromptSubmit`       | `thinking` | When you send a message                  |
-| `PreToolUse`             | `tool`     | Before a tool (Read/Bash/...) is invoked |
-| `PostToolUse`            | `thinking` | After a tool finishes                    |
-| `PostToolUseFailure`     | `error`    | On a tool failure                        |
-| `Notification`           | `waiting`  | When Claude Code shows a notification    |
-| `Stop`                   | `success`  | When Claude Code finishes its response   |
-| `SessionEnd`             | `off`      | When the session closes                  |
+| Hook (Claude Code event) | `--state` argument  | When it fires                            |
+|--------------------------|---------------------|------------------------------------------|
+| `SessionStart`           | `claude.idle`       | When Claude Code opens                   |
+| `UserPromptSubmit`       | `claude.thinking`   | When you send a message                  |
+| `PreToolUse`             | `claude.tool`       | Before a tool (Read/Bash/...) is invoked |
+| `PostToolUse`            | `claude.thinking`   | After a tool finishes                    |
+| `PostToolUseFailure`     | `claude.error`      | On a tool failure                        |
+| `Notification`           | `claude.waiting`    | When Claude Code shows a notification    |
+| `Stop`                   | `claude.success`    | When Claude Code finishes its response   |
+| `SessionEnd`             | `claude.off`        | When the session closes                  |
 
 > The hook commands reference the `$CLAUDE_LED_PROJECT_FOLDER` environment variable
 > (no hardcoded paths). Export it in your shell rc (`~/.zshrc` / `~/.bashrc`) before

@@ -2,7 +2,7 @@
 # LED animation test - sends each animation directly to the firmware for
 # `DURATION` seconds so you can visually verify the generic protocol.
 #
-# This bypasses STATE_MAP and exercises the firmware's raw command surface,
+# This bypasses state profiles and exercises the firmware's raw command surface,
 # so changes to the driver's state mapping don't mask firmware regressions.
 #
 # Usage: scripts/test.sh [seconds_per_animation]

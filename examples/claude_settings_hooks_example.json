@@ -1,0 +1,63 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.idle --quiet" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.thinking --quiet" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.tool --quiet" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.thinking --quiet" }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.error --quiet" }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.waiting --quiet" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.success --quiet" }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.off --quiet" }
+        ]
+      }
+    ]
+  }
+}

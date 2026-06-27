@@ -1,0 +1,42 @@
+{
+  "_comment": "Claude Code state → animation profile. Edit freely; changes take effect on the next hook fire (no firmware reflash). Loaded by led_driver.py when called with --state claude.<key>.",
+  "idle": {
+    "animation": "breathe",
+    "rgb": [0, 50, 220],
+    "period": 3500,
+    "brightness": 100
+  },
+  "thinking": {
+    "animation": "scanner",
+    "rgb": [90, 0, 170],
+    "period": 1600,
+    "brightness": 100
+  },
+  "tool": {
+    "animation": "breathe",
+    "rgb": [255, 128, 0],
+    "period": 1500,
+    "brightness": 100
+  },
+  "waiting": {
+    "animation": "breathe",
+    "rgb": [200, 200, 200],
+    "period": 2500,
+    "brightness": 60
+  },
+  "success": {
+    "animation": "fill",
+    "rgb": [0, 220, 0],
+    "period": 3500,
+    "brightness": 100
+  },
+  "error": {
+    "animation": "blink",
+    "rgb": [180, 0, 0],
+    "period": 300,
+    "brightness": 100
+  },
+  "off": {
+    "animation": "off"
+  }
+}
