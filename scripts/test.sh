@@ -10,8 +10,17 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-DRIVER="$PROJECT_ROOT/driver/led_driver.py"
-DURATION="${1:-3}"  # seconds to wait per animation (default 5)
+CLI="$PROJECT_ROOT/driver/led_cli.py"
+SOCKET="${CLAUDE_LED_SOCKET:-$HOME/.claude-led/led.sock}"
+DURATION="${1:-3}"  # seconds to wait per animation (default 3)
+
+# The daemon is mandatory — without it, --quiet commands are silently dropped
+# and this script appears to do nothing. Fail loudly instead.
+if [[ ! -S "$SOCKET" ]]; then
+  echo "daemon socket not found at $SOCKET" >&2
+  echo "start it with: $SCRIPT_DIR/install.sh start  (or: sudo $SCRIPT_DIR/install.sh install)" >&2
+  exit 1
+fi
 
 # animation|r,g,b|period_ms|brightness_pct|title|description
 # off has no extra params; solid takes no period.
@@ -32,7 +41,7 @@ for entry in "${anims[@]}"; do
   IFS='|' read -r anim rgb period pct title desc <<< "$entry"
   printf "\033[1;36m[%-8s]\033[0m \033[1;37m%-22s\033[0m %s\n" "$anim" "$title" "$desc"
 
-  cmd=(python3 "$DRIVER" --raw "$anim" --quiet)
+  cmd=(python3 "$CLI" --quiet --raw "$anim")
   [[ "$rgb"    != "-" ]] && cmd+=(--rgb "$rgb")
   [[ "$period" != "-" ]] && cmd+=(--period "$period")
   [[ "$pct"    != "-" ]] && cmd+=(--brightness "$pct")

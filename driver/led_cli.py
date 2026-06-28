@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """
-LED Animation Driver (generic)
+LED Animation Driver (generic, thin client)
 -----------------------------------------
-Sends animation commands to the ESP8266 over USB-serial. The driver itself is
-state-agnostic: it knows the wire protocol (animation + RGB + period +
-brightness) but nothing about Claude Code or any other upstream application.
+Sends animation commands to the ESP8266. The driver is state-agnostic: it
+knows the wire protocol (animation + RGB + period + brightness) but nothing
+about Claude Code or any other upstream application.
+
+The driver is a thin client: it connects to led_daemon.py over a Unix domain
+socket (~/.claude-led/led.sock) and forwards the resolved wire command. The
+daemon holds the serial port open, which avoids the 0.5 s ESP8266 reset wait
+(the CH340 DTR line toggles reset on every serial-open).
+
+The daemon is mandatory. If it is not running, the command is dropped (the
+LED is not updated) — there is no automatic direct-serial fallback. Use
+--direct to bypass the daemon for debug; it is not intended for hook use.
 
 State mappings live as JSON profiles in driver/states/. Each profile is a flat
 dict of {state_name: {animation, rgb, period, brightness}}. Use --state
@@ -16,22 +25,28 @@ Setup:
 
 Usage:
     # Raw mode (direct animation, for testing/custom use):
-    python3 led_driver.py --raw breathe --rgb 0,50,220 --period 3500
-    python3 led_driver.py --raw solid --rgb 0,0,255 --brightness 30
-    python3 led_driver.py --raw off
+    python3 led_cli.py --raw breathe --rgb 0,50,220 --period 3500
+    python3 led_cli.py --raw solid --rgb 0,0,255 --brightness 30
+    python3 led_cli.py --raw off
 
     # State mode (lookup from a JSON profile):
-    python3 led_driver.py --state claude.idle
-    python3 led_driver.py --state claude.error --quiet
+    python3 led_cli.py --state claude.idle
+    python3 led_cli.py --quiet --state claude.error
+
+    # Bypass the daemon and talk to the serial port directly (debug):
+    python3 led_cli.py --direct --state claude.idle
 
 The port is auto-detected by scanning USB-serial devices; if it cannot be
 found, set the CLAUDE_LED_PORT environment variable or pass --port.
 """
 
+from __future__ import annotations
+
 import argparse
 import glob
 import json
 import os
+import socket
 import sys
 import time
 
@@ -43,6 +58,15 @@ except ImportError:
 RESET_WAIT_SECONDS = 0.5
 BAUD_RATE = 115200
 ANIMATIONS = {"solid", "breathe", "blink", "scanner", "fill", "off"}
+DAEMON_SOCKET_TIMEOUT = 0.3
+
+
+def socket_path() -> str:
+    """Path to the daemon's Unix socket. Override with CLAUDE_LED_SOCKET."""
+    override = os.environ.get("CLAUDE_LED_SOCKET")
+    if override:
+        return override
+    return os.path.join(os.path.expanduser("~"), ".claude-led", "led.sock")
 
 
 def find_esp8266_port() -> str | None:
@@ -76,7 +100,9 @@ def states_dir() -> str:
     override = os.environ.get("CLAUDE_LED_STATES_DIR")
     if override:
         return override
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "states")
+    # realpath so that when invoked through a symlink (e.g. /usr/local/bin/led
+    # -> /opt/claude-led/led_cli.py) we find the states next to the real file.
+    return os.path.join(os.path.dirname(os.path.realpath(__file__)), "states")
 
 
 def load_profile(profile_name: str) -> dict:
@@ -184,6 +210,29 @@ def send_command(cmd: str, port: str | None, quiet: bool = False) -> bool:
         return False
 
 
+def send_via_daemon(cmd: str, quiet: bool = False,
+                    timeout: float = DAEMON_SOCKET_TIMEOUT) -> bool:
+    """Forward a resolved wire command to led_daemon.py over the Unix socket.
+
+    Returns True on success, False if the daemon is unavailable. The caller
+    (main) drops the command in that case — there is no automatic fallback
+    to direct-serial. Use `--direct` to bypass the daemon explicitly.
+    """
+    path = socket_path()
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(path)
+            s.sendall((cmd + "\n").encode("utf-8"))
+        return True
+    except (FileNotFoundError, ConnectionRefusedError, socket.timeout, OSError) as e:
+        if not quiet:
+            print(f"daemon unreachable at {path} ({e}); command dropped — "
+                  f"start it with: ./scripts/install.sh start",
+                  file=sys.stderr)
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="LED animation driver (generic)")
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -199,6 +248,8 @@ def main():
                         help="Brightness 0-100 (default 100, scaled below firmware MAX_BRIGHTNESS)")
     parser.add_argument("--port", default=None,
                         help="Serial port path (e.g. /dev/cu.usbserial-1410)")
+    parser.add_argument("--direct", action="store_true",
+                        help="Bypass the daemon and talk to the serial port directly (debug)")
     parser.add_argument("--quiet", action="store_true",
                         help="Stay silent if the LED is missing or fails (do not interrupt Claude Code)")
     args = parser.parse_args()
@@ -216,7 +267,10 @@ def main():
             print(f"Error: {e}", file=sys.stderr)
         sys.exit(0)
 
-    send_command(cmd, args.port, quiet=args.quiet)
+    if args.direct:
+        send_command(cmd, args.port, quiet=args.quiet)
+    else:
+        send_via_daemon(cmd, quiet=args.quiet)
     sys.exit(0)
 
 

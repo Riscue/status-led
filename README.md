@@ -6,11 +6,14 @@ Claude Code (idle / thinking / running a tool / waiting for input / success / er
 ## Architecture
 
 ```
-Claude Code --hooks--> led_driver.py --USB-serial--> Wemos D1 Mini --WS2812B data line--> WS2812B strip
+Claude Code --hooks--> led --AF_UNIX--> led_daemon.py --USB-serial--> Wemos D1 Mini --WS2812B--> strip
+                       (thin client)  (persistent service, mandatory)
 ```
 
 - **No Wi-Fi.** The D1 Mini's wireless feature is never used — USB-serial only.
 - **Single cable.** Power and data both go through the same USB cable; no external power supply needed.
+- **Daemon keeps the port open, and is mandatory.** The ESP8266 resets on every serial-open (CH340 DTR line). A persistent daemon avoids the reset (and the 0.5 s wait + brief dark flash on back-to-back hooks). If the daemon is not running, the CLI drops the command instead of falling back to direct-serial — make sure `install.sh install` (auto-start at login) or `install.sh start` has been run.
+- **Install-and-forget.** `sudo ./scripts/install.sh install` copies the binaries to `/opt/claude-led/`, exposes them on `$PATH` as `led`, and registers a launchd/systemd user unit. Claude Code keeps working even if you delete this repo.
 - Brightness is capped in firmware (USB port safety); each command can additionally dim below that ceiling via a
   `bright_pct` parameter.
 
@@ -28,11 +31,25 @@ Claude Code --hooks--> led_driver.py --USB-serial--> Wemos D1 Mini --WS2812B dat
 
 ## Folders
 
-- `firmware/platformio.ini` — PlatformIO configuration (board + library versions pinned)
-- `firmware/src/main.cpp` — Firmware flashed onto the D1 Mini (generic animation renderer)
-- `driver/led_driver.py` — Python driver; translates `--state` / `--raw` into wire-protocol commands
-- `driver/states/` — JSON state profiles (e.g. `claude.json`); drop in new files to add integrations
-- `driver/claude_settings_hooks_example.json` — Example Claude Code hook configuration
+**Repo (development):**
+
+- `firmware/` — ESP8266 firmware (PlatformIO project)
+- `driver/led_cli.py` — Thin CLI client (becomes `/opt/claude-led/led_cli.py` after install)
+- `driver/led_daemon.py` — Persistent daemon (becomes `/opt/claude-led/led_daemon.py`)
+- `driver/states/` — JSON state profiles (copied to `/opt/claude-led/states/`)
+- `scripts/install.sh` — Install / uninstall / daemon control. Templates for launchd/systemd are embedded inline.
+- `examples/claude_settings_hooks_example.json` — Example Claude Code hook configuration
+
+**After `install.sh install` (system-wide, root-owned):**
+
+```
+/opt/claude-led/
+├── led_cli.py          # also accessible as `led` via /usr/local/bin/led
+├── led_daemon.py
+├── states/*.json
+└── install.sh          # so you can uninstall without the repo
+/usr/local/bin/led      # symlink -> /opt/claude-led/led_cli.py
+```
 
 ## Setup sequence
 
@@ -67,19 +84,43 @@ D1 Mini "D4"  -> Strip DIN (data)
 
 ```bash
 pip3 install pyserial
-
-# State mode — looks up claude.idle in driver/states/claude.json:
-python3 driver/led_driver.py --state claude.idle
-
-# Raw mode — direct animation, bypasses state profiles:
-python3 driver/led_driver.py --raw breathe --rgb 0,50,220 --period 3500
-python3 driver/led_driver.py --raw solid --rgb 0,0,255 --brightness 30
 ```
 
-### 5) Wiring up Claude Code hooks
+You can run from the repo without installing:
 
-Append the contents of `claude_settings_hooks_example.json` to `~/.claude/settings.json`,
-and update the paths to point to your `led_driver.py` location.
+```bash
+# State mode — looks up claude.idle in driver/states/claude.json:
+python3 driver/led_cli.py --state claude.idle
+
+# Raw mode — direct animation, bypasses state profiles:
+python3 driver/led_cli.py --raw breathe --rgb 0,50,220 --period 3500
+```
+
+### 5) Install system-wide (recommended)
+
+Install the binaries to `/opt/claude-led/`, expose `led` on `$PATH`, and register a launchd (macOS) / systemd user (Linux) unit so the daemon auto-starts at login:
+
+```bash
+sudo ./scripts/install.sh install
+```
+
+After install, the `led` command is on `$PATH` regardless of whether this repo exists:
+
+```bash
+led --state claude.idle                 # state lookup
+led --raw breathe --rgb 0,50,220 --period 3500
+led --direct --state claude.idle        # bypass daemon (debug)
+./scripts/install.sh status             # daemon status
+./scripts/install.sh logs               # tail daemon log
+./scripts/install.sh foreground         # run daemon in foreground (debug)
+sudo ./scripts/install.sh uninstall     # remove everything
+```
+
+The daemon is mandatory: if it is not running, hook commands are dropped (the LED is not updated). Make sure to either run `install.sh install` (auto-start at login) or start the daemon manually with `./scripts/install.sh start`.
+
+### 6) Wiring up Claude Code hooks
+
+Append the contents of `examples/claude_settings_hooks_example.json` to `~/.claude/settings.json`. The hooks call the installed `led` command, so no path editing is needed (only `install.sh install` must have been run).
 
 ## Claude Code states
 
@@ -118,9 +159,11 @@ in firmware). Unknown animations and malformed lines are silently ignored.
 
 ## Customizing the visuals
 
-Edit `driver/states/claude.json` to retune any Claude Code state — change its
-animation, RGB, period, or brightness. Changes take effect on the next hook
-fire; no reflash, no Python edit.
+Edit `/opt/claude-led/states/claude.json` (after install) to retune any Claude
+Code state — change its animation, RGB, period, or brightness. Changes take
+effect on the next hook fire; no reflash, no Python edit. (During development,
+edit `driver/states/claude.json` in the repo and re-run `install.sh install`
+to copy it across.)
 
 ```json
 "error": {"animation": "blink", "rgb": [180, 0, 0], "period": 500, "brightness": 70}
@@ -128,19 +171,19 @@ fire; no reflash, no Python edit.
 
 ### Adding new state profiles
 
-State profiles are just JSON files in `driver/states/`. Drop in a new file
+State profiles are just JSON files. Drop a new file in `/opt/claude-led/states/`
 (e.g. `git.json`) and reference it with `--state git.<key>`. Each entry needs
 `animation` plus `rgb` / `period` / `brightness` (except `off`, which needs
 only `animation`). No Python changes required.
 
 ```bash
-python3 driver/led_driver.py --state git.merging --quiet
+led --quiet --state git.merging
 ```
 
 For one-off testing from the shell without writing a profile, use `--raw`:
 
 ```bash
-python3 driver/led_driver.py --raw scanner --rgb 200,0,255 --period 1200 --brightness 50
+led --raw scanner --rgb 200,0,255 --period 1200 --brightness 50
 ```
 
 ## Claude Code hooks → state mapping
@@ -156,20 +199,12 @@ python3 driver/led_driver.py --raw scanner --rgb 200,0,255 --period 1200 --brigh
 | `Stop`                   | `claude.success`    | When Claude Code finishes its response   |
 | `SessionEnd`             | `claude.off`        | When the session closes                  |
 
-> The hook commands reference the `$CLAUDE_LED_PROJECT_FOLDER` environment variable
-> (no hardcoded paths). Export it in your shell rc (`~/.zshrc` / `~/.bashrc`) before
-> launching Claude Code:
->
-> ```bash
-> export CLAUDE_LED_PROJECT_FOLDER=/absolute/path/to/claude-led
-> ```
->
-> Alternatively, replace every `$CLAUDE_LED_PROJECT_FOLDER` occurrence in the hook
-> config with the absolute path to this project.
+> Hooks call the installed `led` command directly. After `sudo ./scripts/install.sh install`
+> no environment variables or path edits are needed — Claude Code finds `led` on `$PATH`.
 
 ## Notes / limitations
 
-- `led_driver.py` always exits with code 0 even if the LED hardware is missing or not found,
+- `led` always exits with code 0 even if the LED hardware is missing or not found,
   so it never disrupts the Claude Code flow.
 
 > All states are persistent — the effect continues until a new hook/command arrives.
@@ -180,10 +215,11 @@ python3 driver/led_driver.py --raw scanner --rgb 200,0,255 --period 1200 --brigh
   is missing (install the macOS driver from wch.cn).
 - **Port found but LEDs still not lighting up.** Re-verify the strip pins with a multimeter.
   If you swap 5V and GND, the WS2812B chips will die permanently.
-- **When a hook fires, the LEDs briefly turn off and then back on.** This is normal: the
-  ESP8266 resets on every serial port open, which is why the driver waits 0.5 s after
-  opening the port before sending the command. If multiple hooks fire back-to-back you may
-  see a brief flash.
+- **When a hook fires, the LEDs briefly turn off and then back on.** This should not happen in
+  normal operation — the daemon keeps the serial port open so the ESP8266 does not reset. If you
+  see it, check `./scripts/install.sh status` and `./scripts/install.sh logs`. It is expected
+  with `led --direct ...` (debug), which opens the serial port per-command and pays the 0.5 s
+  ESP8266 reset wait.
 - **"pyserial not installed" warning.** Run `pip3 install pyserial`. The hook config example
   calls the driver with `--quiet`, so this warning is hidden in the hook flow; it only
   appears when running manually.

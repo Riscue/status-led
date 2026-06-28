@@ -182,7 +182,14 @@ void renderFill() {
   unsigned long t = millis() - current.startedAt;
   unsigned long phase = t % current.period;
   uint16_t half = current.period / 2;
-  int litCount = (phase < half) ? (int)map(phase, 0, half, 0, NUM_LEDS) : NUM_LEDS;
+  if (half == 0) half = 1;
+  // Map phase [0, half-1] -> [0, NUM_LEDS] so the progressive fill actually
+  // reaches NUM_LEDS before the hold phase. Using `half` as the upper bound
+  // never returns NUM_LEDS due to integer division (Arduino map() is
+  // integer-only); `half - 1` does.
+  int litCount = (phase < half)
+      ? (int)map(phase, 0, half - 1, 0, NUM_LEDS)
+      : NUM_LEDS;
   uint32_t c = strip.Color(current.r, current.g, current.b);
   for (int i = 0; i < NUM_LEDS; i++) {
     strip.setPixelColor(i, i < litCount ? c : 0);
@@ -193,19 +200,54 @@ void renderOff() {
   strip.clear();
 }
 
+void playBootGreeting() {
+  // Wakeup wave: light LEDs left->right (green = "ready"), brief hold, then
+  // unfill right->left. Distinct from the continuous state animations so it
+  // reads as a one-shot boot greeting rather than a state change.
+  const uint32_t color = strip.Color(0, 200, 0);
+  const uint16_t stepMs = 50;
+
+  // Greeting uses the full MAX_BRIGHTNESS ceiling; applyAnimation re-scales
+  // when the first real command arrives.
+  strip.setBrightness(MAX_BRIGHTNESS);
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    strip.setPixelColor(i, color);
+    strip.show();
+    delay(stepMs);
+  }
+  delay(150);
+  for (int i = NUM_LEDS - 1; i >= 0; i--) {
+    strip.setPixelColor(i, 0);
+    strip.show();
+    delay(stepMs);
+  }
+}
+
 void setup() {
   Serial.begin(SERIAL_BAUD);
   strip.begin();
   strip.setBrightness(MAX_BRIGHTNESS);  // initial ceiling; each command re-scales via bright_pct
   strip.clear();
   strip.show();
+  playBootGreeting();
   current.startedAt = millis();
 }
 
 void loop() {
-  if (Serial.available()) {
-    String cmd = Serial.readStringUntil('\n');
-    handleCommand(cmd);
+  // Non-blocking line read: drain whatever bytes are available, dispatch on
+  // newline. Avoids Serial.readStringUntil's default 1 s timeout blocking
+  // the render loop when a partial line is in the buffer.
+  static String serialBuf;
+  while (Serial.available()) {
+    int c = Serial.read();
+    if (c == '\n') {
+      handleCommand(serialBuf);
+      serialBuf = "";
+    } else if (c != '\r') {
+      // Defensive cap: a misbehaving sender without newlines must not OOM.
+      if (serialBuf.length() < 64) serialBuf += (char)c;
+    }
   }
 
   switch (current.anim) {

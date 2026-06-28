@@ -1,5 +1,5 @@
 {
-  "_comment": "Claude Code state → animation profile. Edit freely; changes take effect on the next hook fire (no firmware reflash). Loaded by led_driver.py when called with --state claude.<key>.",
+  "_comment": "Claude Code state → animation profile. Edit freely; changes take effect on the next hook fire (no firmware reflash). Loaded by led_cli.py when called with --state claude.<key>.",
   "idle": {
     "animation": "breathe",
     "rgb": [0, 50, 220],

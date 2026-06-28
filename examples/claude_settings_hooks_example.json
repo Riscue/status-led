@@ -3,14 +3,14 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.idle --quiet" }
+          { "type": "command", "command": "led --quiet --state claude.idle" }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.thinking --quiet" }
+          { "type": "command", "command": "led --quiet --state claude.thinking" }
         ]
       }
     ],
@@ -18,7 +18,7 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.tool --quiet" }
+          { "type": "command", "command": "led --quiet --state claude.tool" }
         ]
       }
     ],
@@ -26,7 +26,7 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.thinking --quiet" }
+          { "type": "command", "command": "led --quiet --state claude.thinking" }
         ]
       }
     ],
@@ -34,28 +34,28 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.error --quiet" }
+          { "type": "command", "command": "led --quiet --state claude.error" }
         ]
       }
     ],
     "Notification": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.waiting --quiet" }
+          { "type": "command", "command": "led --quiet --state claude.waiting" }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.success --quiet" }
+          { "type": "command", "command": "led --quiet --state claude.success" }
         ]
       }
     ],
     "SessionEnd": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 $CLAUDE_LED_PROJECT_FOLDER/driver/led_driver.py --state claude.off --quiet" }
+          { "type": "command", "command": "led --quiet --state claude.off" }
         ]
       }
     ]
