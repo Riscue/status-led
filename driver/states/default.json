@@ -6,13 +6,6 @@
     "period": 2000,
     "brightness": 100
   },
-  "çakar": {
-    "animation": "strobe",
-    "rgb": [180, 0, 0],
-    "rgb2": [0, 0, 180],
-    "period": 300,
-    "brightness": 100
-  },
   "off": {
     "animation": "off"
   }
