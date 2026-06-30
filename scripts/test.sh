@@ -18,7 +18,7 @@ DURATION="${1:-3}"  # seconds to wait per animation (default 3)
 # and this script appears to do nothing. Fail loudly instead.
 if [[ ! -S "$SOCKET" ]]; then
   echo "daemon socket not found at $SOCKET" >&2
-  echo "start it with: $SCRIPT_DIR/install.sh start  (or: sudo $SCRIPT_DIR/install.sh install)" >&2
+  echo "start it with: $SCRIPT_DIR/install.sh install  (or foreground: python3 \"$PROJECT_ROOT/driver/led_daemon.py\")" >&2
   exit 1
 fi
 

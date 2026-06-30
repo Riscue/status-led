@@ -3,6 +3,7 @@
 #
 # Layout after install:
 #   ~/.claude-led/{led_cli.py, led_daemon.py, protocol.py, states/*.json}
+#   ~/.claude-led/hooks/<source>/    (caller-side glue mirrored from examples/)
 #   ~/.claude-led/{led.sock, daemon.pid, daemon.log}   (runtime, by daemon)
 #   ~/.local/bin/led                                   (symlink → led_cli.py)
 #   ~/Library/LaunchAgents/tr.riscue.claude-led.plist       (macOS, auto-start)
@@ -21,6 +22,12 @@ LED_SYMLINK="$BIN_DIR/led"
 LOG_FILE="$INSTALL_DIR/daemon.log"
 MACOS_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SYSTEMD_UNIT="$HOME/.config/systemd/user/$LABEL.service"
+
+# Repo paths — install.sh runs from scripts/, so siblings live one level up.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="$SCRIPT_DIR/../driver"
+EXAMPLES_DIR="$SCRIPT_DIR/../examples"
+HOOK_DST_DIR="$INSTALL_DIR/hooks"
 
 detect_platform() {
   case "$(uname -s)" in
@@ -42,18 +49,17 @@ find_python_with_pyserial() {
   echo ""
 }
 
-resolve_source_dir() {
-  # When run from the repo, sources live in PROJECT_ROOT/driver/. When run from
-  # a previously-installed copy, they sit next to this script.
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  if [[ -f "$script_dir/led_cli.py" ]]; then
-    echo "$script_dir"
-  elif [[ -f "${script_dir}/../driver/led_cli.py" ]]; then
-    echo "${script_dir}/../driver"
-  else
-    echo ""
+ensure_jq() {
+  # led-hook.sh parses the Claude Code hook payload with jq. Without it the
+  # hook silently falls back to session_id=1 — warn so the user notices.
+  if command -v jq >/dev/null 2>&1; then
+    return 0
   fi
+  echo ""
+  echo "    NOTE: 'jq' not found on PATH."
+  echo "      led-hook.sh needs it to read session_id from the Claude Code hook payload."
+  echo "      Install it (e.g. 'sudo apt install jq' / 'brew install jq') so session"
+  echo "      aggregation works; otherwise every hook defaults to session_id=1."
 }
 
 ensure_user_bus_env() {
@@ -105,11 +111,11 @@ cmd_install() {
     exit 1
   }
 
-  local src_dir
-  src_dir="$(resolve_source_dir)"
-  [[ -n "$src_dir" ]] || { echo "could not locate source files relative to $0" >&2; exit 1; }
-  [[ -f "$src_dir/states/claude.json" ]] || {
-    echo "no state JSON files found in $src_dir/states/" >&2; exit 1
+  [[ -f "$SRC_DIR/states/claude.json" ]] || {
+    echo "no state JSON files found in $SRC_DIR/states/" >&2; exit 1
+  }
+  [[ -d "$EXAMPLES_DIR" ]] || {
+    echo "examples directory not found: $EXAMPLES_DIR" >&2; exit 1
   }
 
   local log_level="${CLAUDE_LED_LOG_LEVEL:-INFO}"
@@ -120,26 +126,44 @@ cmd_install() {
   echo "    log level:   $log_level"
   echo ""
 
-  # 1. Copy files
+  # 1. Copy driver files
   mkdir -p "$INSTALL_DIR/states"
-  cp "$src_dir/led_cli.py"     "$INSTALL_DIR/"
-  cp "$src_dir/led_daemon.py"  "$INSTALL_DIR/"
-  cp "$src_dir/protocol.py"    "$INSTALL_DIR/"
-  cp "$src_dir/states/"*.json  "$INSTALL_DIR/states/"
+  cp "$SRC_DIR/led_cli.py"     "$INSTALL_DIR/"
+  cp "$SRC_DIR/led_daemon.py"  "$INSTALL_DIR/"
+  cp "$SRC_DIR/protocol.py"    "$INSTALL_DIR/"
+  cp "$SRC_DIR/states/"*.json  "$INSTALL_DIR/states/"
   chmod 755 "$INSTALL_DIR"/{led_cli.py,led_daemon.py,protocol.py}
   chmod 644 "$INSTALL_DIR"/states/*.json
   echo "    copied: led_cli.py, led_daemon.py, protocol.py, states/"
 
-  # 2. Symlink led → led_cli.py on PATH
+  # 2. Mirror every examples/<source>/ → hooks/<source>/. Each subdirectory is
+  #    one integration's caller-side glue (scripts, ready-to-paste configs).
+  #    Adding a new integration (examples/foo/) needs no changes here.
+  mkdir -p "$HOOK_DST_DIR"
+  local example_src name
+  shopt -s nullglob
+  for example_src in "$EXAMPLES_DIR"/*/; do
+    name="$(basename "$example_src")"
+    rm -rf "$HOOK_DST_DIR/$name"
+    cp -r "${example_src%/}" "$HOOK_DST_DIR/"
+    # scripts +x so they can be invoked directly from settings.json;
+    # JSON example configs stay 644.
+    find "$HOOK_DST_DIR/$name" -name '*.sh'   -exec chmod 755 {} +
+    find "$HOOK_DST_DIR/$name" -name '*.json' -exec chmod 644 {} +
+    echo "    copied: hooks/$name/"
+  done
+  shopt -u nullglob
+
+  # 3. Symlink led → led_cli.py on PATH
   mkdir -p "$BIN_DIR"
   ln -sf "$INSTALL_DIR/led_cli.py" "$LED_SYMLINK"
   echo "    symlink: $LED_SYMLINK -> $INSTALL_DIR/led_cli.py"
 
-  # 3. Runtime dir doubles as install dir — chmod 700 so the socket (mode 600)
+  # 4. Runtime dir doubles as install dir — chmod 700 so the socket (mode 600)
   # lives in a private dir.
   chmod 700 "$INSTALL_DIR" 2>/dev/null || true
 
-  # 4. Warn if BIN_DIR is not on PATH (hooks call `led` and need it findable)
+  # 5. Warn if BIN_DIR is not on PATH (hooks call `led` and need it findable)
   case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *)
@@ -150,7 +174,11 @@ cmd_install() {
       ;;
   esac
 
-  # 5. Write + load auto-start unit
+  # 6. jq is required by hooks/claude/led-hook.sh; warn only when that
+  #    integration was installed.
+  [[ -d "$HOOK_DST_DIR/claude" ]] && ensure_jq
+
+  # 7. Write + load auto-start unit
   case "$platform" in
     macos) install_macos_unit "$python_bin" "$log_level" ;;
     linux) install_linux_unit "$python_bin" "$log_level" ;;
@@ -287,6 +315,7 @@ Auto-start:
 
 Files installed:
   $INSTALL_DIR/{{led_cli,led_daemon,protocol}.py, states/*.json}
+  $INSTALL_DIR/hooks/<source>/    (mirrored from examples/)
   $LED_SYMLINK → $INSTALL_DIR/led_cli.py
 EOF
 }

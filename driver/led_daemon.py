@@ -50,7 +50,8 @@ Aggregation:
     lives entirely in driver/states/<profile>.json and is resolved by led_cli.py
     before commands reach the daemon.
 
-Started by scripts/install.sh, or directly for foreground debugging.
+Started at login by scripts/install.sh (via launchd on macOS, systemd --user on
+Linux), or directly with `python3 driver/led_daemon.py` for foreground debugging.
 """
 
 from __future__ import annotations

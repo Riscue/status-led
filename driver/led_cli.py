@@ -105,8 +105,8 @@ def states_dir() -> str:
     override = os.environ.get("CLAUDE_LED_STATES_DIR")
     if override:
         return override
-    # realpath so that when invoked through a symlink (e.g. /usr/local/bin/led
-    # -> /opt/claude-led/led_cli.py) we find the states next to the real file.
+    # realpath so that when invoked through a symlink (e.g. ~/.local/bin/led
+    # -> ~/.claude-led/led_cli.py) we find the states next to the real file.
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), "states")
 
 
@@ -319,7 +319,8 @@ def send_via_daemon(cmd: str, quiet: bool = False,
     except (FileNotFoundError, ConnectionRefusedError, socket.timeout, OSError) as e:
         if not quiet:
             print(f"daemon unreachable at {path} ({e}); command dropped — "
-                  f"start it with: ./scripts/install.sh start",
+                  f"start it with: ./scripts/install.sh install "
+                  f"(or run in foreground: python3 driver/led_daemon.py)",
                   file=sys.stderr)
         return False
 
@@ -379,8 +380,8 @@ def main():
             sid = args.end_session or os.environ.get("CLAUDE_SESSION_ID") or ""
             if not sid:
                 if not args.quiet:
-                    print("--end-session requires a session ID (pass one explicitly "
-                          "or run under Claude Code with $CLAUDE_SESSION_ID set)",
+                    print("--end-session requires a session ID "
+                          "(pass one explicitly, e.g. --end-session <sid>)",
                           file=sys.stderr)
                 sys.exit(0)
             if args.direct:

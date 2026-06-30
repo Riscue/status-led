@@ -163,86 +163,76 @@ Below: two complete integration examples.
 }
 ```
 
-Caller — wire Claude Code hooks in `~/.claude/settings.json`:
+Caller — Claude Code passes `session_id` via the hook JSON payload (stdin), not an env var. A tiny shim reads it with
+`jq` and forwards it to `led`. `install.sh` ships this shim as `~/.claude-led/hooks/claude/led-hook.sh`:
+
+```bash
+#!/usr/bin/env bash
+STATE="$1"
+SESSION_ID=$(jq -r '.session_id // empty')
+[ -n "$SESSION_ID" ] || SESSION_ID="1"   # never break the Claude Code flow
+
+if [ "$STATE" = "end" ]; then
+  led --quiet --end-session "$SESSION_ID"
+else
+  led --quiet --session "$SESSION_ID" --state "claude.${STATE}"
+fi
+```
+
+(The shipped script also reads stdin into a variable first; the snippet above keeps the essence.)
+
+Wire it into `~/.claude/settings.json` — one entry per Claude Code hook, each tagging a state from `claude.json`:
 
 ```json
 {
   "hooks": {
     "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "led --quiet --session $CLAUDE_SESSION_ID --state claude.idle"
-          }
-        ]
-      }
+      { "hooks": [
+        { "type": "command", "command": "~/.claude-led/hooks/claude/led-hook.sh idle" }
+      ]}
     ],
     "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "led --quiet --session $CLAUDE_SESSION_ID --state claude.thinking"
-          }
-        ]
-      }
+      { "hooks": [
+        { "type": "command", "command": "~/.claude-led/hooks/claude/led-hook.sh thinking" }
+      ]}
     ],
     "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "led --quiet --session $CLAUDE_SESSION_ID --state claude.tool"
-          }
-        ]
-      }
+      { "matcher": "*", "hooks": [
+        { "type": "command", "command": "~/.claude-led/hooks/claude/led-hook.sh tool" }
+      ]}
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [
+        { "type": "command", "command": "~/.claude-led/hooks/claude/led-hook.sh thinking" }
+      ]}
     ],
     "PostToolUseFailure": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "led --quiet --session $CLAUDE_SESSION_ID --state claude.error"
-          }
-        ]
-      }
+      { "matcher": "*", "hooks": [
+        { "type": "command", "command": "~/.claude-led/hooks/claude/led-hook.sh error" }
+      ]}
     ],
     "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "led --quiet --session $CLAUDE_SESSION_ID --state claude.waiting"
-          }
-        ]
-      }
+      { "hooks": [
+        { "type": "command", "command": "~/.claude-led/hooks/claude/led-hook.sh waiting" }
+      ]}
     ],
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "led --quiet --session $CLAUDE_SESSION_ID --state claude.success"
-          }
-        ]
-      }
+      { "hooks": [
+        { "type": "command", "command": "~/.claude-led/hooks/claude/led-hook.sh success" }
+      ]}
     ],
     "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "led --quiet --end-session $CLAUDE_SESSION_ID"
-          }
-        ]
-      }
+      { "hooks": [
+        { "type": "command", "command": "~/.claude-led/hooks/claude/led-hook.sh end" }
+      ]}
     ]
   }
 }
 ```
+
+A ready-to-paste copy lives at `examples/claude/settings_hooks_example.json`. **`jq` is required** for the shim —
+`install.sh` warns if it's missing (without it, every hook falls back to a single `session_id=1` and aggregation is
+lost).
 
 ### Example 2 — GitLab pipelines
 
@@ -448,7 +438,9 @@ driver/
   protocol.py                                shared constants/helpers
   states/                                    JSON state profiles (claude.json, default.json — drop your own here too)
 examples/
-  claude_settings_hooks_example.json         ready-to-paste Claude Code hooks config
+  claude/
+    led-hook.sh                              Claude Code hook shim (reads JSON payload, calls `led`)
+    settings_hooks_example.json              ready-to-paste Claude Code hooks config
 firmware/                                    PlatformIO project — ESP8266 firmware (C++)
   platformio.ini                             board, upload speed, library pins
   src/main.cpp                               animation renderer, USB-serial command parser
@@ -472,6 +464,10 @@ tests/
 │   ├── claude.json        # Claude Code state map (shipped)
 │   ├── default.json       # ad-hoc states (shipped)
 │   └── gitlab.json        # drop in your own integrations here
+├── hooks/                 # caller-side glue mirrored from examples/
+│   └── claude/
+│       ├── led-hook.sh                # Claude Code hook shim
+│       └── settings_hooks_example.json # ready-to-paste hooks config
 ├── led.sock               # Unix socket (runtime)
 ├── daemon.pid             # PID (runtime)
 └── daemon.log             # logs (runtime)
