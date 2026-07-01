@@ -76,7 +76,7 @@ except ImportError:
 
 from protocol import BAUD_RATE, RESET_WAIT_SECONDS, find_esp8266_port
 
-RECONNECT_INTERVAL = 2.0
+RECONNECT_INTERVALS = [2.0, 5.0, 10.0, 30.0, 60.0]  # backoff, caps at last entry
 ACCEPT_TIMEOUT = 1.0
 CLIENT_TIMEOUT = 0.5
 LISTEN_BACKLOG = 8
@@ -167,18 +167,40 @@ class Daemon:
         self.sessions: dict[str, SessionEntry] = {}
         self.transient: TransientEntry | None = None
         self.current_output: str | None = None  # redundant-emit suppression
+        # Consecutive serial-open failures. Drives the backoff schedule and
+        # dedups the warning log — we log the first failure as WARNING and
+        # subsequent ones as DEBUG so the log doesn't fill with the same line.
+        self.connect_failures = 0
+
+    def reconnect_wait(self) -> float:
+        # After the Nth consecutive failure, wait INTERVALS[N-1] (capped at the
+        # last entry). connect_failures is incremented before this is called, so
+        # for the 1st failure N=1 → INTERVALS[0] = 2s.
+        idx = min(max(self.connect_failures - 1, 0), len(RECONNECT_INTERVALS) - 1)
+        return RECONNECT_INTERVALS[idx]
 
     def open_serial_once(self) -> bool:
         try:
             ser = open_serial_port(self.port_override)
         except Exception as e:
-            self.log.warning("serial open failed: %s", e)
+            # Increment first so reconnect_wait() and the "attempt N" log agree
+            # on N regardless of whether they read connect_failures before or
+            # after the call site in serve().
+            self.connect_failures += 1
+            if self.connect_failures == 1:
+                self.log.warning("serial open failed: %s — backing off", e)
+            else:
+                self.log.debug("serial still unavailable (attempt %d, next try in %.0fs): %s",
+                               self.connect_failures, self.reconnect_wait(), e)
             return False
+        prev_failures = self.connect_failures
+        self.connect_failures = 0
         self.serial = ser
         self.serial_port_name = getattr(ser, "portstr", None) or ser.port
         self.disconnected = False
         time.sleep(RESET_WAIT_SECONDS)
-        self.log.info("serial opened: %s", self.serial_port_name)
+        self.log.info("serial opened: %s%s", self.serial_port_name,
+                      f" after {prev_failures} retries" if prev_failures else "")
         self._replay_pending()
         return True
 
@@ -254,7 +276,7 @@ class Daemon:
         while not self.shutdown.is_set():
             if self.disconnected:
                 if not self.open_serial_once():
-                    self.shutdown.wait(RECONNECT_INTERVAL)
+                    self.shutdown.wait(self.reconnect_wait())
                     continue
 
             try:
