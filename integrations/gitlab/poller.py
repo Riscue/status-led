@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GitLab pipeline poller for claude-led.
+GitLab pipeline poller for status-led.
 
 Polls GitLab's pipelines API and mirrors each active pipeline's status onto
 the LED strip. Each pipeline becomes a session (`gitlab-<id>`) so concurrent

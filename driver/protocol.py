@@ -16,11 +16,11 @@ RESET_WAIT_SECONDS = 0.5  # ESP8266 needs this after serial-open (CH340 DTR rese
 
 
 def socket_path() -> str:
-    """Path to the daemon's Unix socket. Override with CLAUDE_LED_SOCKET."""
-    override = os.environ.get("CLAUDE_LED_SOCKET")
+    """Path to the daemon's Unix socket. Override with STATUS_LED_SOCKET."""
+    override = os.environ.get("STATUS_LED_SOCKET")
     if override:
         return override
-    return os.path.join(os.path.expanduser("~"), ".claude-led", "led.sock")
+    return os.path.join(os.path.expanduser("~"), ".status-led", "led.sock")
 
 
 def socket_dir() -> str:
@@ -30,7 +30,7 @@ def socket_dir() -> str:
 def find_esp8266_port() -> str | None:
     """Auto-detect the ESP8266 USB-serial device file. Returns None if not found.
 
-    Scans common CH340/CP2104/FTDI vendor patterns. Override with CLAUDE_LED_PORT.
+    Scans common CH340/CP2104/FTDI vendor patterns. Override with STATUS_LED_PORT.
     """
     candidates: list[str] = []
     for pattern in ("/dev/cu.wchusbserial*",

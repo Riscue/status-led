@@ -5,10 +5,10 @@ LED Animation Driver (generic, thin client)
 Resolves a state (or raw animation) to a firmware wire line and forwards it
 to led_daemon.py. The driver is state-agnostic: it knows the wire protocol
 (animation + RGB + period + brightness) and the JSON profile format, but
-nothing about Claude Code beyond the profile name passed on the command line.
+nothing about the calling source beyond the profile name passed on the command line.
 
 The driver is a thin client: it connects to led_daemon.py over a Unix domain
-socket (~/.claude-led/led.sock). The daemon holds the serial port open (which
+socket (~/.status-led/led.sock). The daemon holds the serial port open (which
 avoids the 0.5 s ESP8266 reset wait) and aggregates state across multiple
 concurrent sessions.
 
@@ -27,24 +27,24 @@ integration by dropping a folder in integrations/<name>/ with its states.json
 
 Modes (daemon path):
     --session <sid>      STATE       aggregated; competes by priority with other
-                                     live sessions. Defaults to $CLAUDE_SESSION_ID.
+                                     live sessions. Defaults to $SESSION_ID.
     --end-session <sid>  CLEAR       remove a session from the daemon's map.
-                                     Defaults to $CLAUDE_SESSION_ID.
+                                     Defaults to $SESSION_ID.
     (neither)            TRANSIENT   one-shot TTL flash (default 3 s, override
-                                     with --ttl or $CLAUDE_LED_TRANSIENT_TTL_MS).
+                                     with --ttl or $STATUS_LED_TRANSIENT_TTL_MS).
 
 Setup:
     pip3 install pyserial
 
 Usage:
-    # State lookup, aggregated as part of a Claude Code session:
-    python3 led_cli.py --quiet --session $CLAUDE_SESSION_ID --state claude.idle
+    # State lookup, aggregated as part of a session:
+    python3 led_cli.py --quiet --session $SESSION_ID --state claude.idle
 
     # SessionEnd:
-    python3 led_cli.py --quiet --end-session $CLAUDE_SESSION_ID
+    python3 led_cli.py --quiet --end-session $SESSION_ID
 
     # Ad-hoc transient flash (no session context — reverts after TTL):
-    python3 led_cli.py --state claude.error
+    python3 led_cli.py --state gitlab.failed
     python3 led_cli.py --state claude.error --ttl 10000
 
     # Default-profile shorthand (`led <key>` == `led --state default.<key>`):
@@ -56,10 +56,10 @@ Usage:
     python3 led_cli.py --raw off
 
     # Bypass the daemon and talk to the serial port directly (debug):
-    python3 led_cli.py --direct --state claude.idle
+    python3 led_cli.py --direct --state default.on
 
 The port is auto-detected by scanning USB-serial devices; if it cannot be
-found, set the CLAUDE_LED_PORT environment variable or pass --port.
+found, set the STATUS_LED_PORT environment variable or pass --port.
 """
 
 from __future__ import annotations
@@ -117,11 +117,11 @@ def parse_rgb(s: str) -> tuple[int, int, int]:
 def integrations_dir() -> str:
     """Directory containing per-integration profiles (integrations/<name>/states.json).
 
-    Override with CLAUDE_LED_INTEGRATIONS_DIR. In the installed layout this is
-    a sibling of led_cli.py (~/.claude-led/integrations/). In the repo layout
+    Override with STATUS_LED_INTEGRATIONS_DIR. In the installed layout this is
+    a sibling of led_cli.py (~/.status-led/integrations/). In the repo layout
     it sits one level up (repo-root/integrations/).
     """
-    override = os.environ.get("CLAUDE_LED_INTEGRATIONS_DIR")
+    override = os.environ.get("STATUS_LED_INTEGRATIONS_DIR")
     if override:
         return override
     here = os.path.dirname(os.path.realpath(__file__))
@@ -259,7 +259,7 @@ def resolve_state_full(state_ref: str) -> tuple[str, int]:
     wins" during multi-session aggregation.
     """
     if "." not in state_ref:
-        raise ValueError(f"--state expects PROFILE.KEY (e.g. claude.idle), got {state_ref!r}")
+        raise ValueError(f"--state expects PROFILE.KEY (e.g. claude.idle, gitlab.pending), got {state_ref!r}")
     profile_name, key = state_ref.split(".", 1)
     profile = load_profile(profile_name)
     public_keys = {k for k in profile if not k.startswith("_")}
@@ -311,7 +311,7 @@ def send_command(cmd: str, port: str | None, quiet: bool = False) -> bool:
             print("pyserial is not installed. Install it with: pip3 install pyserial", file=sys.stderr)
         return False
 
-    resolved_port = port or os.environ.get("CLAUDE_LED_PORT") or find_esp8266_port()
+    resolved_port = port or os.environ.get("STATUS_LED_PORT") or find_esp8266_port()
     if not resolved_port:
         if not quiet:
             print("ESP8266 serial port not found; LED state not updated (skipping silently).",
@@ -360,7 +360,7 @@ def main():
     mode.add_argument("--raw", metavar="ANIM",
                       help="Send a raw animation: solid/breathe/blink/scanner/fill/strobe/level/converge/off")
     mode.add_argument("--state", metavar="PROFILE.KEY",
-                      help="Look up a state in integrations/<PROFILE>/states.json, or a built-in profile (default) (e.g. claude.idle)")
+                      help="Look up a state in integrations/<PROFILE>/states.json, or a built-in profile (default) (e.g. claude.idle, gitlab.pending)")
     parser.add_argument("key", nargs="?", default=None,
                         help="Shorthand for --state default.<key> (e.g. `led off`)")
     parser.add_argument("--rgb", default=None,
@@ -378,18 +378,18 @@ def main():
     parser.add_argument("--direct", action="store_true",
                         help="Bypass the daemon and talk to the serial port directly (debug; ignores --session/--ttl)")
     parser.add_argument("--quiet", action="store_true",
-                        help="Stay silent if the LED is missing or fails (do not interrupt Claude Code)")
+                        help="Stay silent if the LED is missing or fails (do not interrupt the caller)")
     parser.add_argument("--session", default=None, metavar="SID",
                         help="Track this invocation as part of a session (aggregated). "
-                             "Defaults to $CLAUDE_SESSION_ID if set. With a session, the "
+                             "Defaults to $SESSION_ID if set. With a session, the "
                              "command is sent as STATE and competes by priority with other "
                              "live sessions.")
     parser.add_argument("--end-session", default=None, metavar="SID",
                         help="Remove a session from the daemon's aggregation map (SessionEnd). "
-                             "Defaults to $CLAUDE_SESSION_ID if set.")
+                             "Defaults to $SESSION_ID if set.")
     parser.add_argument("--ttl", type=int, default=None, metavar="MS",
                         help="Transient override TTL in ms (default 3000 or "
-                             "$CLAUDE_LED_TRANSIENT_TTL_MS). Only applies when no --session "
+                             "$STATUS_LED_TRANSIENT_TTL_MS). Only applies when no --session "
                              "is in effect; the resolved state flashes briefly then reverts to "
                              "the aggregate.")
     args = parser.parse_args()
@@ -406,7 +406,7 @@ def main():
     try:
         # CLEAR mode: --end-session removes a session from the daemon's map.
         if args.end_session is not None:
-            sid = args.end_session or os.environ.get("CLAUDE_SESSION_ID") or ""
+            sid = args.end_session or os.environ.get("SESSION_ID") or ""
             if not sid:
                 if not args.quiet:
                     print("--end-session requires a session ID "
@@ -429,7 +429,7 @@ def main():
             rgb2 = parse_rgb(args.rgb2) if args.rgb2 is not None else None
             wire = build_raw_command(args.raw, rgb, args.period, args.brightness,
                                      rgb2=rgb2, level=args.level)
-            # raw mode = manual invocation; outrank every Claude Code session state
+            # raw mode = manual invocation; outrank every session state
             priority = 100
         else:
             wire, priority = resolve_state_full(args.state or f"default.{args.key}")
@@ -441,13 +441,13 @@ def main():
 
         # Daemon path: pick STATE (aggregated) vs TRANSIENT (TTL flash) by
         # whether a session id is in play.
-        session_id = args.session or os.environ.get("CLAUDE_SESSION_ID")
+        session_id = args.session or os.environ.get("SESSION_ID")
         if session_id:
             send_via_daemon(build_state_line(session_id, priority, wire),
                             quiet=args.quiet)
         else:
             ttl_ms = (args.ttl if args.ttl is not None
-                      else int(os.environ.get("CLAUDE_LED_TRANSIENT_TTL_MS",
+                      else int(os.environ.get("STATUS_LED_TRANSIENT_TTL_MS",
                                               DEFAULT_TRANSIENT_TTL_MS)))
             send_via_daemon(build_transient_line(ttl_ms, wire), quiet=args.quiet)
     except ValueError as e:

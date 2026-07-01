@@ -11,7 +11,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 CLI="$PROJECT_ROOT/driver/led_cli.py"
-SOCKET="${CLAUDE_LED_SOCKET:-$HOME/.claude-led/led.sock}"
+SOCKET="${STATUS_LED_SOCKET:-$HOME/.status-led/led.sock}"
 DURATION="${1:-3}"  # seconds to wait per animation (default 3)
 
 # The daemon is mandatory — without it, --quiet commands are silently dropped

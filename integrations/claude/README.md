@@ -8,7 +8,7 @@ terminals aggregate by priority — one's `error` (100) overrides another's
 ## Setup
 
 After `./scripts/install.sh install`, the files in this directory are
-mirrored to `~/.claude-led/integrations/claude/`:
+mirrored to `~/.status-led/integrations/claude/`:
 
 - `led-hook.sh` — reads the hook JSON payload from stdin, extracts
   `session_id` via `jq`, fires `led --session <id> --state claude.<key>`.
@@ -28,7 +28,7 @@ mirrored to `~/.claude-led/integrations/claude/`:
    | `Stop`                 | `claude.success`  | green fill        |
    | `SessionEnd`           | (session cleared) | —                 |
 
-2. Customize colors/priorities in `~/.claude-led/integrations/claude/states.json`.
+2. Customize colors/priorities in `~/.status-led/integrations/claude/states.json`.
 
 ## Requirements
 

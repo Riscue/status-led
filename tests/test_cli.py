@@ -204,23 +204,23 @@ class ProtocolLineBuildersTest(unittest.TestCase):
 class TtlEnvTest(unittest.TestCase):
     def setUp(self):
         # Snapshot so we can restore
-        self._had = "CLAUDE_LED_TRANSIENT_TTL_MS" in os.environ
-        self._val = os.environ.get("CLAUDE_LED_TRANSIENT_TTL_MS")
+        self._had = "STATUS_LED_TRANSIENT_TTL_MS" in os.environ
+        self._val = os.environ.get("STATUS_LED_TRANSIENT_TTL_MS")
 
     def tearDown(self):
         if self._had:
-            os.environ["CLAUDE_LED_TRANSIENT_TTL_MS"] = self._val
+            os.environ["STATUS_LED_TRANSIENT_TTL_MS"] = self._val
         else:
-            os.environ.pop("CLAUDE_LED_TRANSIENT_TTL_MS", None)
+            os.environ.pop("STATUS_LED_TRANSIENT_TTL_MS", None)
 
     def test_default_ttl(self):
-        ttl = int(os.environ.get("CLAUDE_LED_TRANSIENT_TTL_MS",
+        ttl = int(os.environ.get("STATUS_LED_TRANSIENT_TTL_MS",
                                  led_cli.DEFAULT_TRANSIENT_TTL_MS))
         self.assertEqual(ttl, 3000)
 
     def test_env_override(self):
-        os.environ["CLAUDE_LED_TRANSIENT_TTL_MS"] = "5000"
-        ttl = int(os.environ.get("CLAUDE_LED_TRANSIENT_TTL_MS",
+        os.environ["STATUS_LED_TRANSIENT_TTL_MS"] = "5000"
+        ttl = int(os.environ.get("STATUS_LED_TRANSIENT_TTL_MS",
                                  led_cli.DEFAULT_TRANSIENT_TTL_MS))
         self.assertEqual(ttl, 5000)
 

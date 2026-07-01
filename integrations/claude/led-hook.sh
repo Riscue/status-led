@@ -10,7 +10,7 @@ INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 
 # Fall back to a constant so a malformed payload or missing jq still drives the
-# LED — never break the Claude Code flow.
+# LED — never break the caller's flow.
 [ -n "$SESSION_ID" ] || SESSION_ID="1"
 
 if [ "$STATE" = "end" ]; then

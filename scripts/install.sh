@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# install.sh — install / uninstall the claude-led daemon (user-level, no sudo).
+# install.sh — install / uninstall the status-led daemon (user-level, no sudo).
 #
 # Layout after install:
-#   ~/.claude-led/{led_cli.py, led_daemon.py, protocol.py}
-#   ~/.claude-led/integrations/<source>/    (each integration's glue + states.json, mirrored from integrations/)
-#   ~/.claude-led/{led.sock, daemon.pid, daemon.log}   (runtime, by daemon)
+#   ~/.status-led/{led_cli.py, led_daemon.py, protocol.py}
+#   ~/.status-led/integrations/<source>/    (each integration's glue + states.json, mirrored from integrations/)
+#   ~/.status-led/{led.sock, daemon.pid, daemon.log}   (runtime, by daemon)
 #   ~/.local/bin/led                                   (symlink → led_cli.py)
-#   ~/Library/LaunchAgents/tr.riscue.claude-led.plist       (macOS, auto-start)
-#   ~/.config/systemd/user/tr.riscue.claude-led.service     (Linux, auto-start)
+#   ~/Library/LaunchAgents/tr.riscue.status-led.plist       (macOS, auto-start)
+#   ~/.config/systemd/user/tr.riscue.status-led.service     (Linux, auto-start)
 #
 # Usage:
 #   ./install.sh install      # install files + enable auto-start at login
@@ -15,8 +15,8 @@
 
 set -eu
 
-LABEL="tr.riscue.claude-led"
-INSTALL_DIR="$HOME/.claude-led"
+LABEL="tr.riscue.status-led"
+INSTALL_DIR="$HOME/.status-led"
 BIN_DIR="$HOME/.local/bin"
 LED_SYMLINK="$BIN_DIR/led"
 LOG_FILE="$INSTALL_DIR/daemon.log"
@@ -115,9 +115,9 @@ cmd_install() {
     echo "integrations directory not found: $INTEGRATIONS_DIR" >&2; exit 1
   }
 
-  local log_level="${CLAUDE_LED_LOG_LEVEL:-INFO}"
+  local log_level="${STATUS_LED_LOG_LEVEL:-INFO}"
 
-  echo "==> Installing claude-led (user-level)"
+  echo "==> Installing status-led (user-level)"
   echo "    install dir: $INSTALL_DIR"
   echo "    python:      $python_bin ($("$python_bin" --version 2>&1))"
   echo "    log level:   $log_level"
@@ -214,7 +214,7 @@ install_macos_unit() {
   <string>${LOG_FILE}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>CLAUDE_LED_LOG_LEVEL</key>
+    <key>STATUS_LED_LOG_LEVEL</key>
     <string>${log_level}</string>
     <key>PYTHONUNBUFFERED</key>
     <string>1</string>
@@ -232,7 +232,7 @@ install_linux_unit() {
   mkdir -p "$(dirname "$SYSTEMD_UNIT")"
   cat > "$SYSTEMD_UNIT" <<EOF
 [Unit]
-Description=claude-led daemon
+Description=status-led daemon
 After=default.target
 
 [Service]
@@ -240,7 +240,7 @@ Type=simple
 ExecStart=${python_bin} ${INSTALL_DIR}/led_daemon.py
 Restart=on-failure
 RestartSec=2
-Environment=CLAUDE_LED_LOG_LEVEL=${log_level}
+Environment=STATUS_LED_LOG_LEVEL=${log_level}
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
@@ -267,7 +267,7 @@ cmd_uninstall() {
   local platform
   platform="$(detect_platform)"
 
-  echo "==> Uninstalling claude-led"
+  echo "==> Uninstalling status-led"
 
   case "$platform" in
     macos)
@@ -303,7 +303,7 @@ usage() {
 Usage: $0 <command>
 
 Commands:
-  install     Install claude-led (user-level) + enable auto-start at login
+  install     Install status-led (user-level) + enable auto-start at login
   uninstall   Stop the daemon and remove all installed files
 
 Auto-start:

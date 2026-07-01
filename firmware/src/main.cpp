@@ -3,7 +3,7 @@
  * ---------------------------------------------------------------------------
  * Receives single-line commands over USB-serial and renders the requested
  * animation. The firmware is stateless regarding any upstream application
- * (it knows nothing about Claude Code, hooks, or "states"): it only knows
+ * (it knows nothing about the calling source, hooks, or "states"): it only knows
  * the animation name + color + speed + brightness. The host-side driver
  * owns any higher-level mapping.
  *

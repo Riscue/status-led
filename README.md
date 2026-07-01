@@ -1,4 +1,4 @@
-# claude-led
+# status-led
 
 A priority-based status aggregator for an LED strip. A WS2812B strip driven by an ESP8266 shows live status from **any
 source** — Claude Code sessions, GitLab pipelines, shell scripts, anything you can call from a hook — merged onto a
@@ -13,7 +13,7 @@ folder into `integrations/` — no Python edits, no reflash, no daemon restart.
 ```bash
 pip3 install pyserial                     # one-time dependency
 ./scripts/install.sh install              # install + auto-start daemon at login
-led --state claude.idle                   # verify: strip breathes blue
+led on                                    # verify: strip lights up blue
 ```
 
 Then wire Claude Code to fire `led` on each hook (see [`integrations/claude/`](integrations/claude/README.md)). The strip now
@@ -59,7 +59,7 @@ any source        ──►  led (CLI)  ──Unix socket──►  led_daemon  
 
 This command:
 
-- Copies the Python files to `~/.claude-led/`
+- Copies the Python files to `~/.status-led/`
 - Creates the `~/.local/bin/led` symlink (must be on `$PATH`; if not, the script prints what to add to your shell rc)
 - macOS: writes a launchd plist (`RunAtLoad` + `KeepAlive`) → auto-starts at login
 - Linux: writes a systemd --user unit (`enable --now`) → auto-starts at login
@@ -87,7 +87,7 @@ Reference integrations live in [`integrations/`](integrations/):
 | [`integrations/gitlab/`](integrations/gitlab/README.md) | GitLab pipeline status via API poller        | `poller.py`, `states.json`                   |
 | [`integrations/timer/`](integrations/timer/run.sh)      | Count-up / countdown timer via `--raw level` | `run.sh`                                     |
 
-Drop a new `integrations/foo/` directory in and `install.sh` mirrors it to `~/.claude-led/integrations/foo/`
+Drop a new `integrations/foo/` directory in and `install.sh` mirrors it to `~/.status-led/integrations/foo/`
 automatically — no install-script changes required.
 
 ## State profile reference
@@ -147,7 +147,7 @@ led --raw blink --rgb 255,255,0 --period 100
 led off
 
 # Daemon bypass for debug (pays the 0.5s reset wait)
-led --direct --state claude.idle
+led --direct --state default.on
 ```
 
 Three modes:
@@ -186,7 +186,7 @@ daemon restart drops all in-memory state — sessions rebuild as callers fire ag
 ## Installed file layout
 
 ```
-~/.claude-led/
+~/.status-led/
 ├── led_cli.py             # CLI (called by hooks / pollers / scripts)
 ├── led_daemon.py          # daemon (stateful aggregator)
 ├── protocol.py            # shared constants
@@ -198,21 +198,21 @@ daemon restart drops all in-memory state — sessions rebuild as callers fire ag
 ├── daemon.pid             # PID (runtime)
 └── daemon.log             # logs (runtime)
 
-~/.local/bin/led           # → ~/.claude-led/led_cli.py
+~/.local/bin/led           # → ~/.status-led/led_cli.py
 
-~/Library/LaunchAgents/tr.riscue.claude-led.plist       # macOS (auto-start)
-~/.config/systemd/user/tr.riscue.claude-led.service     # Linux (auto-start)
+~/Library/LaunchAgents/tr.riscue.status-led.plist       # macOS (auto-start)
+~/.config/systemd/user/tr.riscue.status-led.service     # Linux (auto-start)
 ```
 
 The CLI also ships a hardcoded `default` profile (used by the bare `led on` / `led off` shorthand) — it lives in
 `BUILTIN_PROFILES` inside `led_cli.py`, not on disk.
 
-Daemon log: `~/.claude-led/daemon.log` — watch with `tail -f`.
+Daemon log: `~/.status-led/daemon.log` — watch with `tail -f`.
 
 Daemon control:
 
-- **macOS:** `launchctl list tr.riscue.claude-led` / `launchctl kickstart -k gui/$(id -u)/tr.riscue.claude-led`
-- **Linux:** `systemctl --user status tr.riscue.claude-led` / `systemctl --user restart tr.riscue.claude-led`
+- **macOS:** `launchctl list tr.riscue.status-led` / `launchctl kickstart -k gui/$(id -u)/tr.riscue.status-led`
+- **Linux:** `systemctl --user status tr.riscue.status-led` / `systemctl --user restart tr.riscue.status-led`
 
 ## Hardware
 
@@ -259,7 +259,7 @@ Without external power, drawing more current risks browning out the USB port or 
 
 ### 3D-printable monitor mount
 
-`case/ClaudeLed.3mf` is a ready-to-print mount designed to clip the strip to the top edge of a monitor. Open it in
+`case/StatusLedCase.3mf` is a ready-to-print mount designed to clip the strip to the top edge of a monitor. Open it in
 any 3D printer slicer that reads `.3mf` (PrusaSlicer, Bambu Studio, Cura, OrcaSlicer, etc.) and slice it for your
 printer.
 
@@ -280,7 +280,7 @@ well-defined surface:
 - `firmware/platformio.ini` — board, upload speed, framework
 - `firmware/src/main.cpp` — `DATA_PIN` (different GPIO numbering), `MAX_BRIGHTNESS` if the USB power budget differs
 - `driver/protocol.py` — `find_esp8266_port()` scans CH340/CP2104/FTDI vendor patterns; a chip outside that list
-  needs a new pattern or a `CLAUDE_LED_PORT` override
+  needs a new pattern or a `STATUS_LED_PORT` override
 
 **What stays the same**: the daemon, CLI, JSON profiles, wire protocol, hooks. None of them know what hardware is on
 the other end.
@@ -304,8 +304,8 @@ pip3 install pyserial
 python3 driver/led_daemon.py
 
 # Terminal 2: fire state changes
-python3 driver/led_cli.py --state claude.idle
-python3 driver/led_cli.py --state claude.error
+python3 driver/led_cli.py --state default.on
+python3 driver/led_cli.py --state gitlab.failed
 python3 driver/led_cli.py --session X --state claude.thinking
 python3 driver/led_cli.py --end-session X
 ```
@@ -313,15 +313,15 @@ python3 driver/led_cli.py --end-session X
 If a system-installed daemon is already running, stop it first or override the socket:
 
 ```bash
-CLAUDE_LED_SOCKET=/tmp/test-led.sock python3 driver/led_daemon.py
-CLAUDE_LED_SOCKET=/tmp/test-led.sock python3 driver/led_cli.py --state claude.idle
+STATUS_LED_SOCKET=/tmp/test-led.sock python3 driver/led_daemon.py
+STATUS_LED_SOCKET=/tmp/test-led.sock python3 driver/led_cli.py --state default.on
 ```
 
 Useful environment variables during development:
 
-- `CLAUDE_LED_LOG_LEVEL=DEBUG` — daemon logs every received command
-- `CLAUDE_LED_PORT=/dev/...` — override serial-port auto-detection
-- `CLAUDE_LED_INTEGRATIONS_DIR` — override the integration profile search path
+- `STATUS_LED_LOG_LEVEL=DEBUG` — daemon logs every received command
+- `STATUS_LED_PORT=/dev/...` — override serial-port auto-detection
+- `STATUS_LED_INTEGRATIONS_DIR` — override the integration profile search path
 
 ## Tests
 
@@ -337,17 +337,17 @@ scripts/test.sh                          # hardware animation smoke test (needs 
 - **Port found but strip still dark.** Re-verify polarity with a multimeter. Swapping 5V and GND kills WS2812B chips
   permanently.
 - **Brief dark flash between hook fires.** The daemon should keep the serial port open so the ESP8266 doesn't reset.
-  If you see resets, check that the daemon is running (`launchctl list tr.riscue.claude-led` /
-  `systemctl --user status tr.riscue.claude-led`) and `tail -f ~/.claude-led/daemon.log`.
-- **Wrong serial port auto-selected.** Override with `CLAUDE_LED_PORT=/dev/...` (env) or `--port /dev/...` (CLI flag,
+  If you see resets, check that the daemon is running (`launchctl list tr.riscue.status-led` /
+  `systemctl --user status tr.riscue.status-led`) and `tail -f ~/.status-led/daemon.log`.
+- **Wrong serial port auto-selected.** Override with `STATUS_LED_PORT=/dev/...` (env) or `--port /dev/...` (CLI flag,
   `--direct` only).
 - **`pyserial is not installed` warning.** Run `pip3 install pyserial`. Hook commands use `--quiet` so this stays
   hidden in normal operation; you'll only see it when running `led` manually.
 - **A closed session left the LED stuck.** A session that crashes without firing `--end-session` leaves stale state
-  until the daemon restarts. Restart with `systemctl --user restart tr.riscue.claude-led` (Linux) or
-  `launchctl kickstart -k gui/$(id -u)/tr.riscue.claude-led` (macOS).
+  until the daemon restarts. Restart with `systemctl --user restart tr.riscue.status-led` (Linux) or
+  `launchctl kickstart -k gui/$(id -u)/tr.riscue.status-led` (macOS).
 
-The CLI always exits 0, even on missing hardware or daemon errors — by design, so hooks never interrupt Claude Code.
+The CLI always exits 0, even on missing hardware or daemon errors — by design, so hooks never interrupt the caller.
 
 ## Contributing
 

@@ -25,7 +25,7 @@ own machine reflecting shared CI.
    every 15 s (`--interval N` to override).
 
 After `./scripts/install.sh install`, this folder is mirrored to
-`~/.claude-led/integrations/gitlab/`, so `states.json` is already on the
+`~/.status-led/integrations/gitlab/`, so `states.json` is already on the
 CLI's profile search path — no manual copy needed.
 
 The poller tracks which pipeline sessions it has seen and clears any that

@@ -6,7 +6,7 @@ Long-running background process that holds the ESP8266 serial port open,
 aggregates state across multiple concurrent client sessions, and forwards the
 highest-priority live state to the firmware. Stays Claude-agnostic: it knows
 only opaque session IDs, priority numbers, and the firmware wire protocol.
-The Claude Code state → priority mapping is resolved by led_cli.py (the
+The state → priority mapping is resolved by led_cli.py (the
 client) before commands reach the daemon.
 
 Why a daemon:
@@ -18,14 +18,14 @@ Why a daemon:
     bypasses the daemon for debug only.
 
     The daemon also aggregates state across multiple concurrent sessions
-    (e.g. several Claude Code terminals running in parallel). Each session's
+    (e.g. several source sessions running in parallel). Each session's
     state is tagged with a priority; the highest-priority live state is what
     reaches the firmware. This lets one session's `error` override another's
     `thinking`, and lets one session close without darkening the strip while
     others are still active.
 
 Socket:
-    ~/.claude-led/led.sock (override with CLAUDE_LED_SOCKET).
+    ~/.status-led/led.sock (override with STATUS_LED_SOCKET).
     Directory mode 0700, socket file mode 0600.
 
 Wire protocol (over the socket, CLI → daemon):
@@ -97,10 +97,10 @@ class TransientEntry:
 
 
 def socket_path() -> str:
-    override = os.environ.get("CLAUDE_LED_SOCKET")
+    override = os.environ.get("STATUS_LED_SOCKET")
     if override:
         return override
-    return os.path.join(os.path.expanduser("~"), ".claude-led", "led.sock")
+    return os.path.join(os.path.expanduser("~"), ".status-led", "led.sock")
 
 
 def socket_dir() -> str:
@@ -112,7 +112,7 @@ def pid_file_path() -> str:
 
 
 def setup_logging() -> logging.Logger:
-    level_name = os.environ.get("CLAUDE_LED_LOG_LEVEL", "INFO").upper()
+    level_name = os.environ.get("STATUS_LED_LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
     logging.basicConfig(
         level=level,
@@ -138,7 +138,7 @@ def open_serial_port(port_override: str | None):
     """Resolve and open the serial port. Raises on failure."""
     if serial is None:
         raise RuntimeError("pyserial is not installed")
-    resolved = port_override or os.environ.get("CLAUDE_LED_PORT") or find_esp8266_port()
+    resolved = port_override or os.environ.get("STATUS_LED_PORT") or find_esp8266_port()
     if not resolved:
         raise RuntimeError("no ESP8266 serial port found")
     return serial.Serial(resolved, BAUD_RATE, timeout=1)
