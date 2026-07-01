@@ -333,6 +333,44 @@ after_script:
 
 (Requires the runner to have `led` installed and access to the daemon socket.)
 
+### Example 3 — Timer (raw mode, no JSON profile)
+
+A count-up or countdown timer rendered as a `level` bar — green when there's plenty of time left, shading to red as the deadline nears. A cyan↔magenta strobe plays for 3 s when the run finishes.
+
+```bash
+./examples/timer/run.sh 5m              # count up: 0 → 5m
+./examples/timer/run.sh --countdown 5m  # count down: 5m → 0
+```
+
+Unlike the integrations above, the timer ships no JSON profile. It fires `--raw level` and `--raw strobe` directly at the firmware — the right pattern when parameters are computed on the fly (here: a percentage and an RGB gradient interpolated in bash).
+
+Core loop (countdown mode):
+
+```bash
+SESSION="timer-$$"
+trap 'led --quiet --end-session "$SESSION" 2>/dev/null || true' EXIT
+
+end=$(( $(date +%s) + total ))
+while :; do
+  remaining=$(( end - $(date +%s) ))
+  (( remaining > 0 )) || break
+  pct=$(( (total - remaining) * 100 / total ))   # elapsed fraction
+  led --quiet --session "$SESSION" --raw level \
+    --rgb "$(color_for_pct "$pct")" --level "$(( remaining * 100 / total ))"
+  sleep 1
+done
+finish_animation   # cyan ↔ magenta strobe, 3 s
+```
+
+Worth noting:
+
+- **Per-tick STATE, not TRANSIENT.** Each tick is a persistent state update under `timer-$$`; the latest level always wins and cleans up on exit. A TRANSIENT (3 s TTL) would also work but flickers if a tick ever arrives late.
+- **`trap` on EXIT.** Ctrl-C the timer and the trap still fires `--end-session`, so the strip goes dark instead of freezing on a partial level.
+- **Color logic independent of direction.** Both modes feed elapsed fraction into `color_for_pct`: 0 % green → 100 % red. Count-down inverts the *level* (100 % → 0 %) but not the color — "red" always means "near the end", whichever way the bar moves.
+- **`--raw` bypasses JSON profiles entirely.** The CLI assembles the wire line from `--rgb`, `--level`, etc. and sends it byte-for-byte — same daemon path as a state-keyed call, just without the lookup.
+
+Requires the daemon running and `led` on `$PATH` (after `./scripts/install.sh install`).
+
 ## State profile reference
 
 Each entry in a state profile JSON supports:
@@ -441,6 +479,8 @@ examples/
   claude/
     led-hook.sh                              Claude Code hook shim (reads JSON payload, calls `led`)
     settings_hooks_example.json              ready-to-paste Claude Code hooks config
+  timer/
+    run.sh                                   count-up/countdown timer (uses --raw level)
 firmware/                                    PlatformIO project — ESP8266 firmware (C++)
   platformio.ini                             board, upload speed, library pins
   src/main.cpp                               animation renderer, USB-serial command parser
@@ -465,9 +505,11 @@ tests/
 │   ├── default.json       # ad-hoc states (shipped)
 │   └── gitlab.json        # drop in your own integrations here
 ├── hooks/                 # caller-side glue mirrored from examples/
-│   └── claude/
-│       ├── led-hook.sh                # Claude Code hook shim
-│       └── settings_hooks_example.json # ready-to-paste hooks config
+│   ├── claude/
+│   │   ├── led-hook.sh                # Claude Code hook shim
+│   │   └── settings_hooks_example.json # ready-to-paste hooks config
+│   └── timer/
+│       └── run.sh                     # count-up/countdown timer
 ├── led.sock               # Unix socket (runtime)
 ├── daemon.pid             # PID (runtime)
 └── daemon.log             # logs (runtime)
