@@ -58,6 +58,7 @@ Linux), or directly with `python3 driver/led_daemon.py` for foreground debugging
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import signal
@@ -320,12 +321,55 @@ class Daemon:
         if not chunks:
             return
         text = b"".join(chunks).decode("utf-8", errors="replace")
+        # STATUS query: respond with a JSON snapshot of daemon state. Only
+        # honored when it's the sole payload — mixed with other commands it
+        # falls through to dispatch, which logs and drops it as unknown. This
+        # keeps the request/response path separate from the fire-and-forget
+        # STATE/CLEAR/TRANSIENT path.
+        if text.strip() == "STATUS":
+            try:
+                payload = json.dumps(self.build_status_dict()) + "\n"
+                client.sendall(payload.encode("utf-8"))
+            except OSError as e:
+                self.log.debug("status response failed: %s", e)
+            return
         for line in text.splitlines():
             line = line.strip()
             if not line:
                 continue
             self.log.debug("recv: %s", line)
             self.dispatch_line(line)
+
+    def build_status_dict(self) -> dict:
+        """Snapshot of daemon state for the STATUS query. Sessions are sorted
+        by priority desc then recency (most recent first within a priority
+        tier) — same ordering the aggregator uses to pick the winner, so the
+        top of the list is what's driving the LED right now.
+        """
+        now = time.monotonic()
+        sessions = [
+            {
+                "sid": sid,
+                "priority": entry.priority,
+                "wire": entry.wire,
+                "age_s": now - entry.updated_at,
+            }
+            for sid, entry in self.sessions.items()
+        ]
+        sessions.sort(key=lambda s: (-s["priority"], s["age_s"]))
+        transient = None
+        if self.transient and self.transient.expires_at > now:
+            transient = {
+                "wire": self.transient.wire,
+                "expires_in_s": self.transient.expires_at - now,
+            }
+        return {
+            "current_output": self.current_output,
+            "sessions": sessions,
+            "transient": transient,
+            "serial_connected": not self.disconnected,
+            "serial_port": self.serial_port_name,
+        }
 
     def dispatch_line(self, line: str) -> None:
         """Parse a protocol line (STATE/CLEAR/TRANSIENT) and update aggregation

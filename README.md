@@ -209,6 +209,9 @@ The CLI also ships a hardcoded `default` profile (used by the bare `led on` / `l
 
 Daemon log: `~/.status-led/daemon.log` — watch with `tail -f`.
 
+Inspect live daemon state with `led --status` (current output, active sessions sorted by priority,
+transient countdown, serial connectivity). `--json` emits raw JSON for scripting.
+
 Daemon control:
 
 - **macOS:** `launchctl list tr.riscue.status-led` / `launchctl kickstart -k gui/$(id -u)/tr.riscue.status-led`

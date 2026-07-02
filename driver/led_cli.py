@@ -354,6 +354,69 @@ def send_via_daemon(cmd: str, quiet: bool = False,
         return False
 
 
+def query_daemon_status(timeout: float = 2.0) -> dict | None:
+    """Send a STATUS query to the daemon and return the parsed JSON response.
+
+    Returns None if the daemon is unreachable, the response is malformed, or
+    the connection times out. Caller (main) decides how to surface that.
+    """
+    path = socket_path()
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(path)
+            s.sendall(b"STATUS\n")
+            chunks = []
+            while True:
+                try:
+                    chunk = s.recv(4096)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            return json.loads(b"".join(chunks).decode("utf-8"))
+    except (FileNotFoundError, ConnectionRefusedError, socket.timeout,
+            OSError, json.JSONDecodeError):
+        return None
+
+
+def format_status(data: dict) -> str:
+    """Render the daemon's STATUS response as human-readable text. Used by
+    `led --status`. Sessions are already sorted by the daemon (priority desc,
+    recency within tier) — the top of the list is what's driving the LED.
+    """
+    lines = []
+    output = data.get("current_output") or "off"
+    lines.append(f"LED output: {output}")
+    if data.get("serial_connected"):
+        port = data.get("serial_port") or "-"
+        lines.append(f"Serial: {port} (connected)")
+    else:
+        lines.append("Serial: (DISCONNECTED)")
+    lines.append("")
+    sessions = data.get("sessions") or []
+    if sessions:
+        lines.append(f"Sessions ({len(sessions)}):")
+        for s in sessions:
+            lines.append(
+                f"  {s['sid']:<24} pri={s['priority']:<4} "
+                f"age={round(s['age_s'], 1)}s  {s['wire']}"
+            )
+    else:
+        lines.append("Sessions: (none)")
+    lines.append("")
+    transient = data.get("transient")
+    if transient:
+        lines.append(
+            f"Transient: expires in {round(transient['expires_in_s'], 1)}s  "
+            f"{transient['wire']}"
+        )
+    else:
+        lines.append("Transient: (none)")
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description="LED animation driver (generic)")
     mode = parser.add_mutually_exclusive_group(required=False)
@@ -361,6 +424,8 @@ def main():
                       help="Send a raw animation: solid/breathe/blink/scanner/fill/strobe/level/converge/off")
     mode.add_argument("--state", metavar="PROFILE.KEY",
                       help="Look up a state in integrations/<PROFILE>/states.json, or a built-in profile (default) (e.g. claude.idle, gitlab.pending)")
+    mode.add_argument("--status", action="store_true",
+                      help="Query the daemon: current output, active sessions, transient, serial state")
     parser.add_argument("key", nargs="?", default=None,
                         help="Shorthand for --state default.<key> (e.g. `led off`)")
     parser.add_argument("--rgb", default=None,
@@ -392,6 +457,8 @@ def main():
                              "$STATUS_LED_TRANSIENT_TTL_MS). Only applies when no --session "
                              "is in effect; the resolved state flashes briefly then reverts to "
                              "the aggregate.")
+    parser.add_argument("--json", action="store_true",
+                        help="With --status, emit the raw JSON response instead of formatted text")
     args = parser.parse_args()
 
     if (args.raw or args.state) and args.key:
@@ -400,10 +467,28 @@ def main():
         parser.error("--end-session and --session are mutually exclusive")
     if args.end_session is not None and (args.raw or args.state or args.key):
         parser.error("--end-session cannot be combined with --state, --raw, or positional <key>")
-    if not (args.raw or args.state or args.key or args.end_session is not None):
-        parser.error("expected one of: --raw ANIM, --state PROFILE.KEY, positional <key>, or --end-session SID")
+    if args.status and (args.raw or args.state or args.key or args.end_session is not None
+                       or args.session is not None or args.direct):
+        parser.error("--status cannot be combined with --raw, --state, --key, "
+                     "--end-session, --session, or --direct")
+    if not (args.raw or args.state or args.key or args.end_session is not None or args.status):
+        parser.error("expected one of: --raw ANIM, --state PROFILE.KEY, positional <key>, "
+                     "--end-session SID, or --status")
 
     try:
+        # STATUS mode: query daemon and print state, then exit.
+        if args.status:
+            data = query_daemon_status()
+            if data is None:
+                if not args.quiet:
+                    print(f"daemon unreachable at {socket_path()}", file=sys.stderr)
+                sys.exit(0)
+            if args.json:
+                print(json.dumps(data, indent=2))
+            else:
+                print(format_status(data))
+            sys.exit(0)
+
         # CLEAR mode: --end-session removes a session from the daemon's map.
         if args.end_session is not None:
             sid = args.end_session or os.environ.get("SESSION_ID") or ""

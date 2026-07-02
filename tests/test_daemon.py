@@ -153,6 +153,79 @@ class RedundantEmitSuppressionTest(unittest.TestCase):
         self.assertEqual(len(self.d.writes), count_before)
 
 
+class BuildStatusDictTest(unittest.TestCase):
+    """build_status_dict() is the source of truth for the `led --status`
+    response. It must reflect the current aggregation state, sort sessions
+    by priority desc + recency asc (same order as the aggregator), and
+    include transient + serial state.
+    """
+
+    def setUp(self):
+        self.d = _CapturingDaemon()
+
+    def test_empty_state(self):
+        status = self.d.build_status_dict()
+        self.assertIsNone(status["current_output"])
+        self.assertEqual(status["sessions"], [])
+        self.assertIsNone(status["transient"])
+        self.assertTrue(status["serial_connected"])  # _CapturingDaemon fakes connected
+
+    def test_current_output_reflects_last_emit(self):
+        self.d.dispatch_line("STATE A 60 scanner 90 0 170 1600 100")
+        status = self.d.build_status_dict()
+        self.assertEqual(status["current_output"], "scanner 90 0 170 1600 100")
+
+    def test_sessions_sorted_by_priority_desc_then_recency(self):
+        # Insert in mixed order; expect sorted output.
+        self.d.dispatch_line("STATE low 10 breathe 0 50 220 3500 100")
+        time.sleep(0.01)
+        self.d.dispatch_line("STATE high 100 blink 180 0 0 300 100")
+        time.sleep(0.01)
+        self.d.dispatch_line("STATE mid 60 scanner 90 0 170 1600 100")
+        status = self.d.build_status_dict()
+        sids = [s["sid"] for s in status["sessions"]]
+        self.assertEqual(sids, ["high", "mid", "low"])
+        # Each entry has the expected fields
+        first = status["sessions"][0]
+        self.assertEqual(first["priority"], 100)
+        self.assertEqual(first["wire"], "blink 180 0 0 300 100")
+        self.assertIn("age_s", first)
+        self.assertGreater(first["age_s"], 0)
+
+    def test_priority_tie_most_recent_first(self):
+        self.d.dispatch_line("STATE A 60 scanner 90 0 170 1600 100")
+        time.sleep(0.01)
+        self.d.dispatch_line("STATE B 60 breathe 0 50 220 3500 100")
+        status = self.d.build_status_dict()
+        sids = [s["sid"] for s in status["sessions"]]
+        self.assertEqual(sids, ["B", "A"])  # B more recent
+
+    def test_transient_included_when_live(self):
+        self.d.dispatch_line("TRANSIENT 5000 blink 180 0 0 300 100")
+        status = self.d.build_status_dict()
+        self.assertIsNotNone(status["transient"])
+        self.assertEqual(status["transient"]["wire"], "blink 180 0 0 300 100")
+        self.assertGreater(status["transient"]["expires_in_s"], 0)
+
+    def test_transient_excluded_when_expired(self):
+        self.d.dispatch_line("TRANSIENT 5000 blink 180 0 0 300 100")
+        # Force expiry
+        self.d.transient = TransientEntry(self.d.transient.wire, time.monotonic() - 0.001)
+        status = self.d.build_status_dict()
+        self.assertIsNone(status["transient"])
+
+    def test_serial_state_reflects_disconnected_flag(self):
+        self.d.disconnected = True
+        status = self.d.build_status_dict()
+        self.assertFalse(status["serial_connected"])
+
+    def test_cleared_session_not_in_status(self):
+        self.d.dispatch_line("STATE A 60 scanner 90 0 170 1600 100")
+        self.d.dispatch_line("CLEAR A")
+        status = self.d.build_status_dict()
+        self.assertEqual(status["sessions"], [])
+
+
 class MalformedLineTest(unittest.TestCase):
     """The daemon must never crash on bad input — it logs and drops."""
 
