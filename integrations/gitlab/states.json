@@ -5,21 +5,21 @@
     "rgb": [200, 200, 200],
     "period": 2000,
     "brightness": 60,
-    "priority": 40
+    "priority": 80
   },
   "running": {
     "animation": "scanner",
     "rgb": [0, 100, 200],
     "period": 1500,
     "brightness": 100,
-    "priority": 50
+    "priority": 80
   },
   "success": {
     "animation": "fill",
     "rgb": [0, 220, 0],
     "period": 3000,
     "brightness": 100,
-    "priority": 20
+    "priority": 80
   },
   "failed": {
     "animation": "blink",
