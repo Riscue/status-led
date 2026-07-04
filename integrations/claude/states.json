@@ -8,30 +8,30 @@
     "priority": 10
   },
   "thinking": {
-    "animation": "scanner",
+    "animation": "bounce",
     "rgb": [90, 0, 170],
     "period": 1600,
     "brightness": 100,
     "priority": 60
   },
   "tool": {
-    "animation": "breathe",
+    "animation": "pulse",
     "rgb": [255, 128, 0],
     "period": 1500,
     "brightness": 100,
     "priority": 50
   },
   "waiting": {
-    "animation": "breathe",
+    "animation": "pulse",
     "rgb": [200, 200, 200],
-    "period": 2500,
+    "period": 1500,
     "brightness": 60,
     "priority": 80
   },
   "success": {
-    "animation": "fill",
+    "animation": "sparkle",
     "rgb": [0, 220, 0],
-    "period": 3500,
+    "period": 1200,
     "brightness": 100,
     "priority": 30
   },

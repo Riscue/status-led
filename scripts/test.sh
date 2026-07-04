@@ -38,6 +38,10 @@ anims=(
   "level|0,220,0|-|100|30|Level green 30%|3/8 LED yanık (ceil)"
   "level|0,220,0|-|100|100|Level green 100%|8/8 LED yanık (== solid)"
   "converge|0,50,220|2000|100|-|Converge blue|iki uçtan ortada buluşup boşalır"
+  "pulse|255,128,0|1000|100|-|Pulse orange|keskin yükselip yavaş sön + durak (input için)"
+  "sparkle|0,220,0|600|100|-|Sparkle green|rastgele LED parıltıları (kutlama)"
+  "heartbeat|220,0,0|1000|100|-|Heartbeat red|lub-dub çift atım + durak (alarm)"
+  "bounce|0,200,200|1200|100|-|Bounce cyan|kuyruklu söner (comet) ileri-geri"
   "off|-|-|-|-|Off|tüm LED'ler kapalı"
 )
 

@@ -68,6 +68,42 @@ class BuildWireLineTest(unittest.TestCase):
                                     period=300, brightness=100),
             "strobe 180 0 0 0 0 180 300 100")
 
+    def test_pulse_full(self):
+        self.assertEqual(
+            led_cli.build_wire_line("pulse", rgb=(255, 128, 0), period=1200),
+            "pulse 255 128 0 1200 100")
+
+    def test_pulse_requires_period(self):
+        with self.assertRaises(ValueError):
+            led_cli.build_wire_line("pulse", rgb=(255, 128, 0))
+
+    def test_sparkle_full(self):
+        self.assertEqual(
+            led_cli.build_wire_line("sparkle", rgb=(0, 220, 0), period=800, brightness=80),
+            "sparkle 0 220 0 800 80")
+
+    def test_sparkle_requires_period(self):
+        with self.assertRaises(ValueError):
+            led_cli.build_wire_line("sparkle", rgb=(0, 220, 0))
+
+    def test_heartbeat_full(self):
+        self.assertEqual(
+            led_cli.build_wire_line("heartbeat", rgb=(220, 0, 0), period=1000),
+            "heartbeat 220 0 0 1000 100")
+
+    def test_heartbeat_requires_period(self):
+        with self.assertRaises(ValueError):
+            led_cli.build_wire_line("heartbeat", rgb=(220, 0, 0))
+
+    def test_bounce_full(self):
+        self.assertEqual(
+            led_cli.build_wire_line("bounce", rgb=(0, 100, 200), period=1400),
+            "bounce 0 100 200 1400 100")
+
+    def test_bounce_requires_period(self):
+        with self.assertRaises(ValueError):
+            led_cli.build_wire_line("bounce", rgb=(0, 100, 200))
+
     def test_level_requires_level_arg(self):
         with self.assertRaises(ValueError):
             led_cli.build_wire_line("level", rgb=(0, 220, 0))
@@ -111,6 +147,30 @@ class BuildCommandFromEntryTest(unittest.TestCase):
             context="test.strobe")
         self.assertEqual(wire, "strobe 180 0 0 0 0 180 300 100")
 
+    def test_pulse_entry(self):
+        wire = led_cli.build_command_from_entry(
+            {"animation": "pulse", "rgb": [255, 128, 0], "period": 1200, "brightness": 100},
+            context="test.pulse")
+        self.assertEqual(wire, "pulse 255 128 0 1200 100")
+
+    def test_sparkle_entry(self):
+        wire = led_cli.build_command_from_entry(
+            {"animation": "sparkle", "rgb": [0, 220, 0], "period": 800, "brightness": 80},
+            context="test.sparkle")
+        self.assertEqual(wire, "sparkle 0 220 0 800 80")
+
+    def test_heartbeat_entry(self):
+        wire = led_cli.build_command_from_entry(
+            {"animation": "heartbeat", "rgb": [220, 0, 0], "period": 1000, "brightness": 100},
+            context="test.heartbeat")
+        self.assertEqual(wire, "heartbeat 220 0 0 1000 100")
+
+    def test_bounce_entry(self):
+        wire = led_cli.build_command_from_entry(
+            {"animation": "bounce", "rgb": [0, 100, 200], "period": 1400, "brightness": 100},
+            context="test.bounce")
+        self.assertEqual(wire, "bounce 0 100 200 1400 100")
+
     def test_level_entry(self):
         wire = led_cli.build_command_from_entry(
             {"animation": "level", "rgb": [0, 220, 0], "level": 50, "brightness": 100},
@@ -142,6 +202,26 @@ class BuildRawCommandTest(unittest.TestCase):
         wire = led_cli.build_raw_command("strobe", (180, 0, 0), 300, 100,
                                          rgb2=(0, 0, 180))
         self.assertEqual(wire, "strobe 180 0 0 0 0 180 300 100")
+
+    def test_raw_pulse(self):
+        self.assertEqual(
+            led_cli.build_raw_command("pulse", (255, 128, 0), 1200, 100),
+            "pulse 255 128 0 1200 100")
+
+    def test_raw_sparkle(self):
+        self.assertEqual(
+            led_cli.build_raw_command("sparkle", (0, 220, 0), 800, 80),
+            "sparkle 0 220 0 800 80")
+
+    def test_raw_heartbeat(self):
+        self.assertEqual(
+            led_cli.build_raw_command("heartbeat", (220, 0, 0), 1000, 100),
+            "heartbeat 220 0 0 1000 100")
+
+    def test_raw_bounce(self):
+        self.assertEqual(
+            led_cli.build_raw_command("bounce", (0, 100, 200), 1400, 100),
+            "bounce 0 100 200 1400 100")
 
     def test_raw_off(self):
         self.assertEqual(led_cli.build_raw_command("off", None, None, 100), "off")

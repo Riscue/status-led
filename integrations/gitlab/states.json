@@ -1,23 +1,23 @@
 {
   "_comment": "GitLab pipeline state → animation. Edit freely; install.sh mirrors this folder to ~/.status-led/integrations/gitlab/.",
   "pending": {
-    "animation": "breathe",
+    "animation": "pulse",
     "rgb": [200, 200, 200],
-    "period": 2000,
+    "period": 1500,
     "brightness": 60,
     "priority": 40
   },
   "running": {
-    "animation": "scanner",
+    "animation": "bounce",
     "rgb": [0, 100, 200],
     "period": 1500,
     "brightness": 100,
     "priority": 50
   },
   "success": {
-    "animation": "fill",
+    "animation": "sparkle",
     "rgb": [0, 220, 0],
-    "period": 3000,
+    "period": 1200,
     "brightness": 100,
     "priority": 20
   },
