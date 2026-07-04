@@ -12,9 +12,9 @@ bash).
 ## Usage
 
 ```bash
-./run.sh 5m                # count up:   0 → 5m  (default)
-./run.sh --up 5m           # explicit count-up
-./run.sh --countdown 5m    # count down: 5m → 0
+./run.py 5m                # count up:   0 → 5m  (default)
+./run.py --up 5m           # explicit count-up
+./run.py --countdown 5m    # count down: 5m → 0
 ```
 
 `<duration>` accepts `30`, `30s`, `5m`, `1h30m`, …
