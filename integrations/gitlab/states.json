@@ -1,5 +1,5 @@
 {
-  "_comment": "GitLab pipeline state → animation. Edit freely; install.sh mirrors this folder to ~/.status-led/integrations/gitlab/.",
+  "_comment": "GitLab pipeline state → animation. Edit freely; `led service install` mirrors this folder to ~/.status-led/integrations/gitlab/.",
   "pending": {
     "animation": "pulse",
     "rgb": [200, 200, 200],

@@ -3,14 +3,14 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "~/.status-led/integrations/claude/led-hook.sh idle" }
+          { "type": "command", "command": "led claude" }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "~/.status-led/integrations/claude/led-hook.sh thinking" }
+          { "type": "command", "command": "led claude" }
         ]
       }
     ],
@@ -18,7 +18,7 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "~/.status-led/integrations/claude/led-hook.sh tool" }
+          { "type": "command", "command": "led claude" }
         ]
       }
     ],
@@ -26,7 +26,7 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "~/.status-led/integrations/claude/led-hook.sh thinking" }
+          { "type": "command", "command": "led claude" }
         ]
       }
     ],
@@ -34,28 +34,28 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "~/.status-led/integrations/claude/led-hook.sh error" }
+          { "type": "command", "command": "led claude" }
         ]
       }
     ],
     "Notification": [
       {
         "hooks": [
-          { "type": "command", "command": "~/.status-led/integrations/claude/led-hook.sh waiting" }
+          { "type": "command", "command": "led claude" }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "~/.status-led/integrations/claude/led-hook.sh success" }
+          { "type": "command", "command": "led claude" }
         ]
       }
     ],
     "SessionEnd": [
       {
         "hooks": [
-          { "type": "command", "command": "~/.status-led/integrations/claude/led-hook.sh end" }
+          { "type": "command", "command": "led claude" }
         ]
       }
     ]

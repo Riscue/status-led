@@ -37,11 +37,11 @@
  *   pio run -t upload    (flash to the board, dependencies are downloaded automatically)
  *
  * POWER NOTE: There is no extra power cable -- a single USB cable carries both
- * power and data. 8 LEDs at full white can draw ~500mA; USB port limits range
- * from 500mA (USB 2.0) to 900mA (USB-C). MAX_BRIGHTNESS=32 (about 12% duty)
- * keeps the peak current well within USB 2.0 limits. bright_pct only scales
- * BELOW this ceiling -- it can never exceed it. Do NOT raise MAX_BRIGHTNESS
- * without an external power supply.
+ * power and data. 15 LEDs at full white at full duty can draw ~900mA; USB port
+ * limits range from 500mA (USB 2.0) to 900mA (USB-C). MAX_BRIGHTNESS=64
+ * (about 25% duty) caps peak current at ~225mA, well within USB 2.0 limits.
+ * bright_pct only scales BELOW this ceiling -- it can never exceed it.
+ * Do NOT raise MAX_BRIGHTNESS without an external power supply.
  *
  * Wiring (from the strip's 3-pin input connector or pads):
  *   D1 Mini "5V" pin  -> Strip 5V   (raw 5V from USB; when the D1 Mini is

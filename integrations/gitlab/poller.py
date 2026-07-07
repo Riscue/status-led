@@ -12,29 +12,17 @@ Once everything goes idle, hold the final state briefly so the outcome is
 visible, then CLEAR every session this script created and exit.
 
 For always-on monitoring, run under systemd with Restart=always + RestartSec,
-or wrap in a shell loop: `while true; do ./poller.py; sleep 30; done`.
+or wrap in a shell loop: `while true; do led gitlab; sleep 30; done`.
 
 Requires: pip3 install requests
 
-Usage:
-    GITLAB_URL=https://gitlab.com \\
-    GITLAB_TOKEN=<token-with-read_api> \\
-    PROJECTS=myteam/backend,myteam/frontend \\
-    ./poller.py
+Credentials: read from os.environ. The CLI dispatch (led gitlab) loads
+~/.status-led/secrets.env and exposes only GITLAB_* keys to this subprocess.
 
-    # with an env file (recommended — keeps credentials out of shell history):
-    cp .env.example .env  # then edit
-    ./poller.py           # .env auto-loaded if present in cwd
-
-Environment:
-    GITLAB_URL     base URL (no trailing slash)
-    GITLAB_TOKEN   personal access token with read_api scope
-    PROJECTS       comma-separated project paths
-
---env-file PATH: load KEY=VALUE lines from a file. Defaults to ./.env; a
-    missing default is silently skipped, a missing explicit path is an error.
-    File values override the environment. Comments (#) and blank lines are
-    ignored. Matching surrounding quotes are stripped ("key" → key).
+Environment (GITLAB_* prefix):
+    GITLAB_URL       base URL (no trailing slash)
+    GITLAB_TOKEN     personal access token with read_api scope
+    GITLAB_PROJECTS  comma-separated project paths
 
 Sessions created during a run are CLEARed on exit (clean, Ctrl-C, or idle), so
 no stale entries linger on the strip between invocations.
@@ -63,52 +51,15 @@ ACTIVE_STATUSES = ("pending", "running")
 FINAL_HOLD_SECONDS = 3
 
 
-def env_required(name: str) -> str:
+def _required(name: str) -> str:
+    """Fetch a required env var or exit(2) with a hint pointing at secrets.env."""
     value = os.environ.get(name)
     if not value:
         print(f"required env var not set: {name}", file=sys.stderr)
+        print(f"(add it to ~/.status-led/secrets.env — see secrets.env.example)",
+              file=sys.stderr)
         sys.exit(2)
     return value
-
-
-def load_env_file(path: str, required: bool) -> None:
-    """Load KEY=VALUE lines from a file into os.environ. File values override
-    the environment. Format:
-      - One KEY=VALUE per line; split on first '='
-      - Blank lines and lines starting with '#' ignored
-      - Matching surrounding quotes stripped ("key" / 'key' → key)
-      - No shell expansion, no interpolation
-
-    If `required` is False, a missing file is silently skipped (the .env
-    default convention). If True, a missing file is an error.
-    """
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        if required:
-            print(f"error: --env-file {path} not found", file=sys.stderr)
-            sys.exit(2)
-        return
-    except OSError as e:
-        print(f"error: could not read --env-file {path}: {e}", file=sys.stderr)
-        sys.exit(2)
-    for lineno, raw in enumerate(lines, start=1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            print(f"warning: {path}:{lineno}: missing '=', skipping line", file=sys.stderr)
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-            value = value[1:-1]
-        if not key:
-            print(f"warning: {path}:{lineno}: empty key, skipping line", file=sys.stderr)
-            continue
-        os.environ[key] = value
 
 
 def fire_led(args: list[str]) -> None:
@@ -116,7 +67,7 @@ def fire_led(args: list[str]) -> None:
     try:
         subprocess.run(["led", "--quiet", *args], check=False)
     except FileNotFoundError:
-        print("`led` not on PATH; run ./scripts/install.sh install first", file=sys.stderr)
+        print("`led` not on PATH; install with: pipx install .  then: led service install", file=sys.stderr)
 
 
 def clear_sessions(seen: set[str]) -> None:
@@ -163,27 +114,21 @@ def poll(gitlab: str, token: str, projects: list[str], seen: set[str]) -> tuple[
         for pipeline in to_show:
             sid = f"gitlab-{pipeline['id']}"
             current.add(sid)
-            fire_led(["--session", sid, "--state", f"gitlab.{pipeline['status']}"])
+            fire_led(["--session", sid, "gitlab", pipeline['status']])
     for stale in seen - current:
         fire_led(["--end-session", stale])
     return current, has_active
 
 
-def main() -> None:
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="GitLab pipeline → LED poller")
     parser.add_argument("--interval", type=int, default=15,
                         help="poll interval in seconds while active (default 15)")
-    parser.add_argument("--env-file", default=".env", metavar="PATH",
-                        help="KEY=VALUE file loaded before reading env vars "
-                             "(default: ./.env; missing default is silent, "
-                             "missing explicit path is an error)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    load_env_file(args.env_file, required=args.env_file != ".env")
-
-    gitlab = env_required("GITLAB_URL").rstrip("/")
-    token = env_required("GITLAB_TOKEN")
-    projects = [p.strip() for p in env_required("PROJECTS").split(",") if p.strip()]
+    gitlab = _required("GITLAB_URL").rstrip("/")
+    token = _required("GITLAB_TOKEN")
+    projects = [p.strip() for p in _required("GITLAB_PROJECTS").split(",") if p.strip()]
 
     print(f"watching projects: {projects}", file=sys.stderr)
     seen: set[str] = set()
@@ -207,7 +152,8 @@ def main() -> None:
                 except KeyboardInterrupt:
                     pass
             clear_sessions(seen)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv[1:]))
