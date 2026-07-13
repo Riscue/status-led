@@ -79,9 +79,11 @@ except ImportError:
 from protocol import BAUD_RATE, RESET_WAIT_SECONDS, find_esp8266_port, socket_path
 
 ANIMATIONS = {"solid", "breathe", "blink", "scanner", "fill",
-              "strobe", "level", "converge", "off"}
+              "strobe", "level", "converge",
+              "pulse", "sparkle", "heartbeat", "bounce", "off"}
 # Animations that need a period_ms parameter.
-PERIOD_ANIMATIONS = {"breathe", "blink", "scanner", "fill", "converge", "strobe"}
+PERIOD_ANIMATIONS = {"breathe", "blink", "scanner", "fill", "converge", "strobe",
+                     "pulse", "sparkle", "heartbeat", "bounce"}
 DAEMON_SOCKET_TIMEOUT = 0.3
 DEFAULT_TRANSIENT_TTL_MS = 3000
 
@@ -197,7 +199,7 @@ def build_wire_line(anim: str,
       solid    rgb                                   → "solid r g b [pct]"
       level    rgb, level                            → "level r g b level [pct]"
       strobe   rgb, rgb2, period                     → "strobe r g b r2 g2 b2 period [pct]"
-      breathe/blink/scanner/fill/converge
+      breathe/blink/scanner/fill/converge/pulse/sparkle/heartbeat/bounce
                rgb, period                           → "<anim> r g b period [pct]"
     """
     if anim not in ANIMATIONS:
@@ -421,7 +423,7 @@ def main():
     parser = argparse.ArgumentParser(description="LED animation driver (generic)")
     mode = parser.add_mutually_exclusive_group(required=False)
     mode.add_argument("--raw", metavar="ANIM",
-                      help="Send a raw animation: solid/breathe/blink/scanner/fill/strobe/level/converge/off")
+                      help="Send a raw animation: solid/breathe/blink/scanner/fill/strobe/level/converge/pulse/sparkle/heartbeat/bounce/off")
     mode.add_argument("--state", metavar="PROFILE.KEY",
                       help="Look up a state in integrations/<PROFILE>/states.json, or a built-in profile (default) (e.g. claude.idle, gitlab.pending)")
     mode.add_argument("--status", action="store_true",
@@ -433,7 +435,7 @@ def main():
     parser.add_argument("--rgb2", default=None,
                         help="Second color for strobe as 'r,g,b' (--raw only; required for strobe)")
     parser.add_argument("--period", type=int, default=None,
-                        help="Animation period in ms (--raw only; required for breathe/blink/scanner/fill/strobe/converge)")
+                        help="Animation period in ms (--raw only; required for breathe/blink/scanner/fill/strobe/converge/pulse/sparkle/heartbeat/bounce)")
     parser.add_argument("--level", type=int, default=None,
                         help="Level percentage 0-100 (--raw only; required for level animation)")
     parser.add_argument("--brightness", type=int, default=100,

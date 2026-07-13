@@ -16,6 +16,10 @@
  *   strobe   r1 g1 b1 r2 g2 b2 period_ms [bright_pct]   period/2 color1, period/2 color2
  *   level    r g b level_pct [bright_pct]   static bar: ceil(level_pct*N/100) LEDs lit from index 0
  *   converge r g b period_ms [bright_pct]   edges light inward, meet at center, retreat back (triangle wave)
+ *   pulse     r g b period_ms [bright_pct]   sharp rise -> exp decay -> brief off (single throb per period)
+ *   sparkle   r g b period_ms [bright_pct]   random per-LED flashes; period = avg interval per LED
+ *   heartbeat r g b period_ms [bright_pct]   lub-dub double-thump + long rest
+ *   bounce    r g b period_ms [bright_pct]   scanner with a fading directional trail
  *   off
  *
  *   bright_pct: 0-100 (optional, default 100). Scales below MAX_BRIGHTNESS.
@@ -58,10 +62,10 @@
 // Note: D4 is a boot-strapping pin + onboard blue LED. After boot it can be
 // used as WS2812B data. We keep it here because the cable is already soldered
 // to this pin; for a fresh build prefer D2 (GPIO4).
-#define NUM_LEDS        8      // WS2812B strip
-#define MAX_BRIGHTNESS  32     // 0-255, USB-safe upper bound (see POWER NOTE)
+#define NUM_LEDS        15      // WS2812B strip
+#define MAX_BRIGHTNESS  64      // 0-255, USB-safe upper bound (see POWER NOTE)
 #define SERIAL_BAUD     115200
-#define MIN_PERIOD_MS   50     // sub-50ms periods look broken at our 16ms loop cadence
+#define MIN_PERIOD_MS   50      // sub-50ms periods look broken at our 16ms loop cadence
 
 Adafruit_NeoPixel strip(NUM_LEDS, DATA_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -74,6 +78,10 @@ enum Animation {
   ANIM_STROBE,
   ANIM_LEVEL,
   ANIM_CONVERGE,
+  ANIM_PULSE,
+  ANIM_SPARKLE,
+  ANIM_HEARTBEAT,
+  ANIM_BOUNCE,
   ANIM_OFF
 };
 
@@ -85,6 +93,7 @@ struct AnimState {
   uint16_t period = 0;
   uint8_t  brightPct = 100;          // 0-100, scales below MAX_BRIGHTNESS
   unsigned long startedAt = 0;
+  uint8_t  sparkleLife[NUM_LEDS] = {0};  // per-LED decay for sparkle
 } current;
 
 uint8_t clamp8(int v)   { return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v); }
@@ -105,6 +114,10 @@ void applyAnimation(Animation a, uint8_t r, uint8_t g, uint8_t b,
   current.period = period;
   current.brightPct = pct;
   current.startedAt = millis();
+  // Reset per-anim scratch so a fresh sparkle command doesn't inherit stale
+  // brightness values from a previous run (the array only changes while
+  // sparkle is rendering, so it can hold maxed-out values across long gaps).
+  for (int i = 0; i < NUM_LEDS; i++) current.sparkleLife[i] = 0;
   // MAX_BRIGHTNESS is the USB-safe ceiling; bright_pct scales within it.
   strip.setBrightness((uint8_t)((uint16_t)MAX_BRIGHTNESS * pct / 100));
 }
@@ -156,15 +169,21 @@ void handleCommand(String cmd) {
   }
 
   if (name == "breathe" || name == "blink" || name == "scanner"
-      || name == "fill" || name == "converge") {
+      || name == "fill" || name == "converge"
+      || name == "pulse" || name == "sparkle"
+      || name == "heartbeat" || name == "bounce") {
     int r, g, b, period, pct = 100;
     int n = sscanf(rest.c_str(), "%d %d %d %d %d", &r, &g, &b, &period, &pct);
     if (n >= 4 && period >= MIN_PERIOD_MS) {
-      Animation a = (name == "breathe") ? ANIM_BREATHE
-                  : (name == "blink")   ? ANIM_BLINK
-                  : (name == "scanner") ? ANIM_SCANNER
-                  : (name == "fill")    ? ANIM_FILL
-                                        : ANIM_CONVERGE;
+      Animation a = (name == "breathe")   ? ANIM_BREATHE
+                  : (name == "blink")     ? ANIM_BLINK
+                  : (name == "scanner")   ? ANIM_SCANNER
+                  : (name == "fill")      ? ANIM_FILL
+                  : (name == "pulse")     ? ANIM_PULSE
+                  : (name == "sparkle")   ? ANIM_SPARKLE
+                  : (name == "heartbeat") ? ANIM_HEARTBEAT
+                  : (name == "bounce")    ? ANIM_BOUNCE
+                                          : ANIM_CONVERGE;
       applyAnimation(a, clamp8(r), clamp8(g), clamp8(b),
                      (uint16_t)period, clampPct(pct));
     }
@@ -274,6 +293,93 @@ void renderConverge() {
   }
 }
 
+void renderPulse() {
+  // Single sharp throb per period. Linear rise over first 10%, quadratic
+  // decay over next 50%, dark for the remaining 40% (the gap is what makes
+  // it read as discrete pulses rather than a continuous breathe).
+  unsigned long t = millis() - current.startedAt;
+  float phase = (t % current.period) / (float)current.period;
+  float amp;
+  if (phase < 0.10f) {
+    amp = phase / 0.10f;
+  } else if (phase < 0.60f) {
+    float d = (phase - 0.10f) / 0.50f;     // 0..1
+    amp = (1.0f - d) * (1.0f - d);          // quadratic decay 1 -> 0
+  } else {
+    amp = 0.0f;
+  }
+  uint32_t c = strip.Color((uint8_t)(current.r * amp),
+                           (uint8_t)(current.g * amp),
+                           (uint8_t)(current.b * amp));
+  for (int i = 0; i < NUM_LEDS; i++) strip.setPixelColor(i, c);
+}
+
+void renderSparkle() {
+  // Each LED is an independent twinkle: random trigger, exponential-ish
+  // decay. `period` is the average interval between flashes for any single
+  // LED (period=1000 -> ~1 flash/sec/LED). Shorter period -> denser
+  // sparkle, longer -> sparser ambient glitter.
+  float p = 16.0f / (float)current.period;     // per-frame trigger probability
+  if (p > 0.5f) p = 0.5f;
+  for (int i = 0; i < NUM_LEDS; i++) {
+    if ((float)random(10000) / 10000.0f < p) {
+      current.sparkleLife[i] = 255;
+    }
+    uint8_t life = current.sparkleLife[i];
+    strip.setPixelColor(i, strip.Color((uint8_t)((uint16_t)current.r * life / 255),
+                                       (uint8_t)((uint16_t)current.g * life / 255),
+                                       (uint8_t)((uint16_t)current.b * life / 255)));
+    if (current.sparkleLife[i] > 12) current.sparkleLife[i] -= 12;
+    else current.sparkleLife[i] = 0;
+  }
+}
+
+void renderHeartbeat() {
+  // Lub-dub: two triangle thumps (lub stronger, dub weaker) then a long
+  // rest. The asymmetry is what makes it read as a heartbeat rather than
+  // a double-blink.
+  unsigned long t = millis() - current.startedAt;
+  float phase = (t % current.period) / (float)current.period;
+  float amp = 0.0f;
+  float d1 = (phase >= 0.05f) ? (phase - 0.05f) : (0.05f - phase);
+  if (d1 < 0.06f) amp += (0.06f - d1) / 0.06f;          // lub at 5%
+  float d2 = (phase >= 0.22f) ? (phase - 0.22f) : (0.22f - phase);
+  if (d2 < 0.05f) amp += 0.65f * (0.05f - d2) / 0.05f;  // dub at 22%
+  if (amp > 1.0f) amp = 1.0f;
+  uint32_t c = strip.Color((uint8_t)(current.r * amp),
+                           (uint8_t)(current.g * amp),
+                           (uint8_t)(current.b * amp));
+  for (int i = 0; i < NUM_LEDS; i++) strip.setPixelColor(i, c);
+}
+
+void renderBounce() {
+  // Like scanner, but the LEDs behind the direction of motion fade out
+  // gradually instead of going dark instantly — reads as a comet tail.
+  // Direction sign comes from the cosine of the same phase the position
+  // sin uses: cos > 0 -> position increasing -> trail on the left.
+  unsigned long t = millis() - current.startedAt;
+  float phase = (t % current.period) / (float)current.period;
+  float pos = (sin(phase * 2.0 * PI) + 1.0) / 2.0 * (NUM_LEDS - 1);
+  float dirSign = cos(phase * 2.0 * PI);
+  int center = (int)round(pos);
+  for (int i = 0; i < NUM_LEDS; i++) {
+    int offset = i - center;
+    float factor = 0.0f;
+    if (offset == 0) {
+      factor = 1.0f;
+    } else {
+      bool behind = (dirSign > 0 && offset < 0) || (dirSign < 0 && offset > 0);
+      int ad = offset < 0 ? -offset : offset;
+      if (behind && ad <= 3) {
+        factor = 1.0f / (float)(1 << ad);   // 0.5, 0.25, 0.125
+      }
+    }
+    strip.setPixelColor(i, strip.Color((uint8_t)(current.r * factor),
+                                       (uint8_t)(current.g * factor),
+                                       (uint8_t)(current.b * factor)));
+  }
+}
+
 void renderOff() {
   strip.clear();
 }
@@ -337,6 +443,10 @@ void loop() {
     case ANIM_STROBE:  renderStrobe();  break;
     case ANIM_LEVEL:   renderLevel();   break;
     case ANIM_CONVERGE:renderConverge();break;
+    case ANIM_PULSE:    renderPulse();    break;
+    case ANIM_SPARKLE:  renderSparkle();  break;
+    case ANIM_HEARTBEAT:renderHeartbeat();break;
+    case ANIM_BOUNCE:   renderBounce();   break;
     case ANIM_OFF:     renderOff();     break;
   }
 

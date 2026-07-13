@@ -85,7 +85,7 @@ Reference integrations live in [`integrations/`](integrations/):
 |---------------------------------------------------------|----------------------------------------------|----------------------------------------------|
 | [`integrations/claude/`](integrations/claude/README.md) | Claude Code session state via hooks          | `led-hook.sh`, `settings_hooks_example.json` |
 | [`integrations/gitlab/`](integrations/gitlab/README.md) | GitLab pipeline status via API poller        | `poller.py`, `states.json`                   |
-| [`integrations/timer/`](integrations/timer/run.sh)      | Count-up / countdown timer via `--raw level` | `run.sh`                                     |
+| [`integrations/timer/`](integrations/timer/README.md)  | Count-up / countdown timer via `--raw level` | `run.py`                                     |
 
 Drop a new `integrations/foo/` directory in and `install.sh` mirrors it to `~/.status-led/integrations/foo/`
 automatically — no install-script changes required.
@@ -193,7 +193,7 @@ daemon restart drops all in-memory state — sessions rebuild as callers fire ag
 ├── integrations/          # one folder per integration, mirrored from repo's integrations/
 │   ├── claude/            # led-hook.sh, settings_hooks_example.json, states.json, README.md
 │   ├── gitlab/            # poller.py, states.json, README.md
-│   └── timer/             # run.sh, README.md
+│   └── timer/             # run.py, README.md
 ├── led.sock               # Unix socket (runtime)
 ├── daemon.pid             # PID (runtime)
 └── daemon.log             # logs (runtime)
