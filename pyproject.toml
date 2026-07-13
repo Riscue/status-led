@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "status-led"
+version = "0.3.0"
+description = "Priority-aggregating status LED strip driven by ESP8266"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "riscue" }]
+dependencies = ["pyserial>=3.5", "requests>=2.28"]
+
+[project.scripts]
+led = "status_led.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+status_led = ["integrations/**/*", "firmware/**/*"]

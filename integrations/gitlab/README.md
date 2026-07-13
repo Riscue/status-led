@@ -1,41 +1,48 @@
 # GitLab pipeline → LED
 
-A Python poller that hits the GitLab API every 15 s and mirrors each active
-pipeline's status onto the strip. Best when you want a status LED on your
-own machine reflecting shared CI.
+A Python poller that hits the GitLab API every 15 s while any watched
+pipeline is in-flight and mirrors each pipeline's status onto the strip.
+Once everything goes idle, the poller holds the final state briefly so the
+outcome is visible, then exits (CLEARs its sessions on the way out).
 
 ## Setup
 
-1. Install dependencies:
+1. Configure credentials in the single secrets file:
 
    ```bash
-   pip3 install requests
+   cp secrets.env.example ~/.status-led/secrets.env
+   # edit ~/.status-led/secrets.env: set GITLAB_URL, GITLAB_TOKEN, GITLAB_PROJECTS
    ```
+
+   The CLI loads `~/.status-led/secrets.env` on every `led gitlab` call and
+   exposes only `GITLAB_*` keys to this poller. Other integrations' secrets
+   never leak across.
 
 2. Run the poller:
 
    ```bash
-   GITLAB_URL=https://gitlab.example.com \
-   GITLAB_TOKEN=<personal-access-token-with-read_api> \
-   PROJECTS=myteam/backend,myteam/frontend \
-   ./poller.py
+   led gitlab                # uses ~/.status-led/secrets.env
    ```
 
-   `--once` polls a single time and exits (cron-friendly); the default loops
-   every 15 s (`--interval N` to override).
-
-After `./scripts/install.sh install`, this folder is mirrored to
-`~/.status-led/integrations/gitlab/`, so `states.json` is already on the
-CLI's profile search path — no manual copy needed.
+   `--interval N` overrides the poll interval (default 15 s). The poller
+   exits when no watched project has an in-flight pipeline — wrap in a
+   shell loop or run under systemd with `Restart=always` for always-on
+   monitoring.
 
 The poller tracks which pipeline sessions it has seen and clears any that
 disappear from the API response — no stale state lingers on the strip.
 Priorities come from `states.json`: `failed` (90) beats `running` (50)
 beats `pending` (40) beats `success` (20).
 
+To override the bundled `states.json`, create
+`~/.status-led/integrations/gitlab/states.json` (per-file fallback — only
+that file is overridden).
+
 ## Files
 
-| File          | Purpose                                                                    |
-|---------------|----------------------------------------------------------------------------|
-| `poller.py`   | Workstation-side API poller                                                |
-| `states.json` | Pipeline status → animation mapping; loaded by `led --state gitlab.<key>`  |
+| File               | Purpose                                                          |
+|--------------------|------------------------------------------------------------------|
+| `poller.py`        | Workstation-side API poller (entry point: `led gitlab`)          |
+| `states.json`      | Pipeline status → animation mapping; loaded by `led gitlab <key>` |
+| `integration.json` | Manifest declaring `poller.py` as the run script                |
+| `README.md`        | This file                                                        |

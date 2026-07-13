@@ -1,0 +1,5 @@
+{
+  "description": "GitLab pipeline status via API poller",
+  "author": "riscue",
+  "run": "poller.py"
+}

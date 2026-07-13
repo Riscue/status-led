@@ -2,9 +2,9 @@
 """LED strip timer (count-up or countdown).
 
 Usage:
-  run.py <duration>              # count up: 0 → <duration>  (default)
-  run.py --up <duration>
-  run.py --countdown <duration>
+  led timer <duration>           # count up: 0 → <duration>  (default)
+  led timer --up <duration>
+  led timer --countdown <duration>
 
 <duration> accepts 30, 30s, 5m, 1h30m, ...
 
@@ -15,6 +15,9 @@ strobe plays for 3 s when the run finishes.
 Each tick is a persistent STATE under a per-invocation session id; the
 session is cleared on exit (including Ctrl-C / SIGTERM), so killing the
 timer takes the strip dark instead of freezing on a partial level.
+
+Animation commands go through `led raw` (no JSON profile — the RGB and
+level percentage are computed per tick).
 """
 import argparse
 import math
@@ -50,12 +53,14 @@ def color_for_pct(pct):
 
 
 def led(*args):
-    # Fire `led --quiet ...`; never raise — hooks must not interrupt callers.
+    # Fire `led ...`; never raise — hooks must not interrupt callers. Caller
+    # passes the subcommand (`raw` or nothing for --end-session) plus flags;
+    # --quiet is included in args so the legacy argparse path stays silent too.
     try:
-        subprocess.run(["led", "--quiet", *args], check=False,
+        subprocess.run(["led", *args], check=False,
                        stderr=subprocess.DEVNULL)
     except FileNotFoundError:
-        pass  # `led` not on PATH — silently drop, like the bash `|| true`
+        pass  # `led` not on PATH — silently drop.
 
 
 def render_tick(mode, total, session, now, start, end):
@@ -73,12 +78,12 @@ def render_tick(mode, total, session, now, start, end):
         elapsed_int = int(elapsed)
         pct = elapsed_int * 100 // total
         level_pct = pct
-    led("--session", session, "--raw", "level",
+    led("raw", "--quiet", "--session", session, "level",
         "--rgb", color_for_pct(pct), "--level", str(level_pct))
 
 
 def finish_animation(session):
-    led("--session", session, "--raw", "strobe",
+    led("raw", "--quiet", "--session", session, "strobe",
         "--rgb", "0,255,255", "--rgb2", "255,0,255", "--period", "400")
     time.sleep(FINISH_DURATION)
 
@@ -112,12 +117,12 @@ def run(mode, total):
     except KeyboardInterrupt:
         pass  # Ctrl-C — exit quietly; `finally` clears the session
     finally:
-        led("--end-session", session)
+        led("--quiet", "--end-session", session)
 
 
-def main():
+def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(
-        prog="run.py",
+        prog="led timer",
         description="LED strip timer (count-up or countdown).",
         usage="%(prog)s [--up|--countdown] <duration>",
     )
@@ -130,9 +135,10 @@ def main():
                       help="count down: <duration> → 0")
     p.add_argument("duration", type=parse_duration,
                    help="e.g. 30, 30s, 5m, or 1h30m")
-    args = p.parse_args()
+    args = p.parse_args(argv)
     run(args.mode or "up", args.duration)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv[1:]))

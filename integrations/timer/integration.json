@@ -1,0 +1,5 @@
+{
+  "description": "Count-up / countdown timer rendered as a level bar",
+  "author": "riscue",
+  "run": "timer.py"
+}
