@@ -48,7 +48,7 @@ ACTIVE_STATUSES = ("pending", "running")
 # Seconds to hold the final state on a clean exit before clearing, so the user
 # actually sees the outcome (fill animation period is ~3 s; shorter than this
 # and the fill wouldn't complete before the strip goes dark).
-FINAL_HOLD_SECONDS = 3
+FINAL_HOLD_SECONDS = 15
 
 
 def _required(name: str) -> str:
