@@ -87,17 +87,62 @@ def fetch_pipelines(gitlab: str, token: str, project: str) -> list[dict]:
     return resp.json()
 
 
-def poll(gitlab: str, token: str, projects: list[str], seen: set[str]) -> tuple[set[str], bool]:
-    """For each project: if any pipeline is currently active, STATE only those;
-    otherwise STATE only the single most recent pipeline (whatever its status).
+def fetch_pipeline_jobs(gitlab: str, token: str, project: str, pipeline_id: int) -> list[dict]:
+    url = f"{gitlab}/api/v4/projects/{project.replace('/', '%2F')}/pipelines/{pipeline_id}/jobs"
+    resp = requests.get(url, params={"per_page": 50},
+                        headers={"PRIVATE-TOKEN": token}, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def format_status_line(project: str, pipeline: dict, jobs: list[dict]) -> str:
+    """Build a single-line, terminal-friendly summary for stdout.
+
+    Format: ``<project>  #<iid>  <status>  jobs: <done>/<total> (<detail>)  <web_url>``
+    Jobs segment is dropped when we have no job data so the line still prints
+    a useful clickable link on jobs-fetch failure.
+    """
+    parts = [project, f"#{pipeline.get('iid', pipeline.get('id', '?'))}", pipeline.get("status", "?")]
+    if jobs:
+        counts: dict[str, int] = {}
+        for j in jobs:
+            counts[j.get("status", "unknown")] = counts.get(j.get("status", "unknown"), 0) + 1
+        total = len(jobs)
+        done = counts.get("success", 0) + counts.get("failed", 0) + counts.get("canceled", 0)
+        detail_parts = [f"{n} {s}" for s, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+        parts.append(f"jobs: {done}/{total} ({', '.join(detail_parts)})")
+    if pipeline.get("web_url"):
+        parts.append(pipeline["web_url"])
+    return "  ".join(parts)
+
+
+def poll(gitlab: str, token: str, projects: list[str], seen: set[str],
+         last_printed: dict[str, str]) -> tuple[set[str], bool]:
+    """Two-pass poll.
+
+    Pass 1: fetch every project's pipelines, flag has_active if ANY project has
+    an in-flight pipeline.
+
+    Pass 2: decide what to STATE per project.
+      - If has_active across all projects → STATE only active pipelines
+        (idle projects' most-recent result is suppressed so a finished
+        ``success``/``failed`` from one project cannot override a ``running``
+        pipeline from another — priorities for live vs finished states tie at
+        80 in states.json, and the aggregator breaks ties by last-write-wins).
+      - Otherwise → STATE each project's single most-recent pipeline so the
+        final outcome is briefly visible before the poller exits.
 
     CLEARs any session that was previously STATE'd but is no longer current.
+
+    For each shown pipeline, prints a single status line (URL + job breakdown)
+    to stdout only when it differs from the last line we printed for that
+    session — so a quiet terminal still reflects progress on change.
 
     Returns (new_seen, has_active) where has_active is True if any project had
     an in-flight pipeline — the caller uses this to decide whether to keep
     watching or exit.
     """
-    current: set[str] = set()
+    fetched: list[tuple[str, list[dict]]] = []
     has_active = False
     for project in projects:
         try:
@@ -105,18 +150,32 @@ def poll(gitlab: str, token: str, projects: list[str], seen: set[str]) -> tuple[
         except (requests.RequestException, ValueError) as e:
             print(f"fetch failed for {project}: {e}", file=sys.stderr)
             continue
-        active = [p for p in pipelines if p.get("status") in ACTIVE_STATUSES]
-        if active:
+        fetched.append((project, pipelines))
+        if any(p.get("status") in ACTIVE_STATUSES for p in pipelines):
             has_active = True
-            to_show = active
+
+    current: set[str] = set()
+    for project, pipelines in fetched:
+        if has_active:
+            to_show = [p for p in pipelines if p.get("status") in ACTIVE_STATUSES]
         else:
             to_show = pipelines[:1]
         for pipeline in to_show:
             sid = f"gitlab-{pipeline['id']}"
             current.add(sid)
+            try:
+                jobs = fetch_pipeline_jobs(gitlab, token, project, pipeline["id"])
+            except (requests.RequestException, ValueError) as e:
+                print(f"jobs fetch failed for {project}#{pipeline['id']}: {e}", file=sys.stderr)
+                jobs = []
+            line = format_status_line(project, pipeline, jobs)
+            if last_printed.get(sid) != line:
+                print(line, flush=True)
+                last_printed[sid] = line
             fire_led(["--session", sid, "gitlab", pipeline['status']])
     for stale in seen - current:
         fire_led(["--end-session", stale])
+        last_printed.pop(stale, None)
     return current, has_active
 
 
@@ -132,10 +191,11 @@ def main(argv: list[str]) -> int:
 
     print(f"watching projects: {projects}", file=sys.stderr)
     seen: set[str] = set()
+    last_printed: dict[str, str] = {}
     interrupted = False
     try:
         while True:
-            seen, has_active = poll(gitlab, token, projects, seen)
+            seen, has_active = poll(gitlab, token, projects, seen, last_printed)
             if not has_active:
                 break
             time.sleep(args.interval)

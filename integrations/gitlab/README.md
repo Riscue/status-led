@@ -34,6 +34,17 @@ disappear from the API response — no stale state lingers on the strip.
 Priorities come from `states.json`: `failed` (90) beats `running` (50)
 beats `pending` (40) beats `success` (20).
 
+While polling, the poller also prints a single status line per shown
+pipeline to **stdout** (diagnostics still go to stderr):
+
+```
+foo/bar  #123  running  jobs: 2/5 (2 success, 2 pending, 1 running)  https://gitlab.com/foo/bar/-/pipelines/123
+```
+
+The line is reprinted only when the pipeline status or job breakdown
+changes — quiet on steady state, verbose on transitions. The terminal
+renders the URL as clickable; pipe to `grep`/`xclip` to grab it.
+
 To override the bundled `states.json`, create
 `~/.status-led/integrations/gitlab/states.json` (per-file fallback — only
 that file is overridden).
